@@ -1,0 +1,2181 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SubLens – Dịch phụ đề bằng Gemini</title>
+<style>
+:root{
+  --bg:#f4f5f8; --panel:#ffffff; --panel2:#eef0f4; --ink:#1a1e27; --mut:#667085; --line:#e1e4ea;
+  --acc:#4f46e5; --acc2:#6d64ff; --acc-ink:#ffffff; --ok:#15803d; --warn:#b45309; --bad:#c62828; --info:#1d4ed8;
+  --warn-bg:#fff4e0; --bad-bg:#fde8e8; --ok-bg:#e3f6e8; --info-bg:#e6eeff; --flash:#fff6b8;
+  --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08);
+}
+@media (prefers-color-scheme:dark){
+  :root{--bg:#0e1015;--panel:#161a22;--panel2:#1d222c;--ink:#e8eaf0;--mut:#98a2b3;--line:#272d39;
+    --acc:#8b85ff;--acc2:#a29dff;--acc-ink:#0e1015;--ok:#4ade80;--warn:#fbbf24;--bad:#f87171;--info:#7aa2ff;
+    --warn-bg:#3a2d12;--bad-bg:#3d1b1b;--ok-bg:#14301d;--info-bg:#182544;--flash:#4a4216;--shadow:none}
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif}
+button,input,select,textarea{font:inherit;color:inherit}
+.app{display:grid;grid-template-columns:auto minmax(0,1fr) auto;height:100vh;height:100dvh;overflow:hidden}
+.brand{font-weight:700;font-size:16px;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+.brand .logo{color:var(--acc);font-size:20px;line-height:1}
+.brand small{font-weight:400;color:var(--mut);font-size:12px}
+.scrim{display:none}
+.steps{display:flex;flex-direction:column;gap:6px;list-style:none;margin:0;padding:0}
+.steps li{display:flex;align-items:center;gap:8px;padding:7px 11px;border-radius:10px;background:var(--panel2);color:var(--mut);font-size:13px;border:1px solid transparent;transition:background .2s,color .2s}
+.steps li.run{background:var(--info-bg);color:var(--info);border-color:var(--info);animation:pulse 1.4s infinite}
+.steps li.done{background:var(--ok-bg);color:var(--ok)}
+.steps li.err{background:var(--bad-bg);color:var(--bad)}
+@keyframes pulse{50%{opacity:.6}}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);cursor:pointer;font-size:13px;white-space:nowrap}
+.btn:hover{background:var(--panel2)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.sm{padding:4px 9px;font-size:12.5px}
+.btn.primary{background:var(--acc);border-color:var(--acc);color:var(--acc-ink);font-weight:600}
+.btn.primary:hover{background:var(--acc2)}
+.btn.danger{background:var(--bad);border-color:var(--bad);color:#fff;font-weight:600}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--mut)}
+.exp-list{display:flex;flex-direction:column;gap:4px}
+.exp-list button{display:block;width:100%;text-align:left;border:1px solid var(--line);background:var(--panel);padding:8px 11px;border-radius:9px;cursor:pointer;font-size:13px}
+.exp-list button:hover{background:var(--panel2)}
+.exp-list hr{border:0;border-top:1px solid var(--line);margin:4px 0;width:100%}
+
+/* ---- Cột trái / phải ---- */
+.side,.rside{display:none;flex-direction:column;min-height:0;background:var(--bg);width:372px}
+.rside{width:268px}
+.side{grid-column:1}
+.main{grid-column:2}
+.rside{grid-column:3}
+.app.l-open .side{display:flex;border-right:1px solid var(--line)}
+.app.r-open .rside{display:flex;border-left:1px solid var(--line)}
+.sd-head{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--panel);min-height:48px}
+.sd-title{font-weight:700;font-size:14px;flex:1}
+.sd-body{flex:1;min-height:0;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:12px;overscroll-behavior:contain}
+.rside .sd-body h4{margin:6px 0 -4px;font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--mut);font-weight:700}
+.run-box{display:flex;flex-direction:column;gap:6px}
+.run-box .btn{justify-content:center;padding:10px 12px;font-size:14px;border-radius:10px;width:100%}
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.stats-grid:empty{display:none}
+.st{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:7px 10px}
+.st b{display:block;font-size:16px;font-variant-numeric:tabular-nums}
+.st span{font-size:11.5px;color:var(--mut)}
+.st.warn b{color:var(--warn)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}
+.card>summary{display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:pointer;list-style:none;font-size:13px;font-weight:700;user-select:none}
+.card>summary::-webkit-details-marker{display:none}
+.card>summary::after{content:"";margin-left:auto;width:7px;height:7px;border-right:2px solid var(--mut);border-bottom:2px solid var(--mut);transform:rotate(45deg);transition:transform .15s;margin-right:4px;margin-top:-3px}
+.card[open]>summary::after{transform:rotate(-135deg);margin-top:3px}
+.card-b{padding:0 12px 12px}
+.grip{display:inline-grid;place-items:center;cursor:grab;touch-action:none;color:var(--mut);padding:5px 4px;border-radius:6px;margin-left:-4px}
+.grip:hover,.grip:focus-visible{background:var(--panel2);color:var(--ink);outline:none}
+.card.dragging{box-shadow:0 14px 40px rgba(0,0,0,.3);border-color:var(--acc);cursor:grabbing;opacity:.97}
+.card-ph{border:2px dashed color-mix(in srgb,var(--acc) 55%,transparent);border-radius:14px;background:color-mix(in srgb,var(--acc) 7%,transparent);flex:none}
+body.dragging-card,body.dragging-card *{cursor:grabbing!important;user-select:none}
+.tgl{flex:none}
+.app.l-open #btnLOpen,.app.r-open #btnROpen{background:var(--info-bg);border-color:var(--acc);color:var(--acc)}
+label.f{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--mut);margin-bottom:8px}
+label.f.row2{flex-direction:row;align-items:center;gap:8px;color:var(--ink);font-size:13px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+input[type=text],input[type=number],select,textarea{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--panel);outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--acc);box-shadow:0 0 0 2px color-mix(in srgb,var(--acc) 25%,transparent)}
+textarea{resize:vertical}
+.hint{color:var(--mut);font-size:12px;margin:4px 0 0}
+.btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.drop{border:2px dashed var(--line);border-radius:10px;padding:16px;text-align:center;color:var(--mut);cursor:pointer;margin-bottom:8px}
+.drop.over{border-color:var(--acc);background:var(--info-bg);color:var(--info)}
+.drop b{color:var(--ink)}
+#keyChips{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}
+.kc{display:grid;grid-template-columns:auto 1fr;gap:0 6px;border:1px solid var(--line);border-radius:8px;padding:4px 8px;font-size:11.5px;align-items:center}
+.kc b{grid-row:span 2;font-size:12px}
+.kc span{font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--mut)}
+.kc em{font-style:normal;grid-column:2}
+.kc small{display:none}
+.kc.ok{border-color:color-mix(in srgb,var(--ok) 40%,var(--line))} .kc.ok em{color:var(--ok)}
+.kc.busy{border-color:var(--info);background:var(--info-bg)} .kc.busy em{color:var(--info)}
+.kc.cool{border-color:var(--warn);background:var(--warn-bg)} .kc.cool em{color:var(--warn)}
+.kc.dead{border-color:var(--bad);background:var(--bad-bg)} .kc.dead em{color:var(--bad)}
+.kc small{display:inline;color:var(--mut)}
+.stat{font-size:12.5px;color:var(--mut)}
+.stat b{color:var(--ink)}
+
+:root{--cols:100px minmax(0,1fr) minmax(0,1fr) 100px}
+.main{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--bg)}
+.progress{background:var(--panel);border-bottom:1px solid var(--line)}
+.pg-row{display:flex;align-items:center;gap:10px;padding:7px 12px;min-height:48px}
+.pg-main{flex:1;min-width:0;font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#pStats{font-size:12px;color:var(--mut);white-space:nowrap}
+.quick-run{display:none;gap:6px}
+.app:not(.r-open) .quick-run{display:flex}
+.bar{height:3px;background:var(--panel2);overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--acc),var(--acc2));transition:width .25s}
+.ticker{padding:5px 14px 7px;font-size:12.5px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-top:1px solid var(--line);background:var(--panel2)}
+.ticker:empty{display:none}
+.ticker b{color:var(--ink);font-weight:600}
+.toolbar{container-type:inline-size;display:flex;gap:8px;align-items:center;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+.toolbar select{width:auto;font-weight:600;border-radius:999px;background:var(--panel2);border-color:transparent;padding:6px 12px}
+.search{position:relative;flex:1 1 140px;max-width:380px;min-width:120px}
+@container (max-width:880px){#btnUndo .tx,#btnRedo .tx{display:none}}
+@container (max-width:560px){.tb-group .tx{display:none}.switch span{font-size:12px}}
+.search span{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--mut);pointer-events:none;font-size:14px}
+.search input{padding:7px 12px 7px 30px;border-radius:999px;background:var(--panel2);border-color:transparent}
+.tb-group{display:flex;gap:4px;margin-left:auto}
+.tb-group .btn{border-color:transparent;background:var(--panel2)}
+.tb-group .btn:hover{background:color-mix(in srgb,var(--acc) 12%,var(--panel2))}
+.btn .ic{font-size:14px;line-height:1}
+.switch{position:relative;display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--mut);cursor:pointer;user-select:none;white-space:nowrap}
+.switch input{position:absolute;opacity:0;width:0;height:0}
+.switch i{flex:none;width:30px;height:18px;border-radius:99px;background:var(--line);position:relative;transition:background .15s}
+.switch i::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:transform .15s;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+.switch input:checked+i{background:var(--acc)}
+.switch input:checked+i::after{transform:translateX(12px)}
+.switch input:focus-visible+i{box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 30%,transparent)}
+.head-row>div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.head-row{display:grid;grid-template-columns:var(--cols);gap:14px;padding:7px 16px 7px 15px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);background:var(--panel2);border-bottom:1px solid var(--line)}
+.list{flex:1;overflow:auto;min-height:0;background:var(--panel)}
+.empty{padding:70px 20px;text-align:center;color:var(--mut);max-width:520px;margin:0 auto}
+.empty h2{color:var(--ink);margin:0 0 6px;font-size:18px}
+.row{display:grid;grid-template-columns:var(--cols);grid-template-areas:"m s t a";gap:4px 14px;padding:10px 16px 10px 12px;border-bottom:1px solid var(--line);border-left:3px solid transparent;background:var(--panel);content-visibility:auto;contain-intrinsic-size:auto 84px;transition:background .12s}
+.row:hover{background:color-mix(in srgb,var(--acc) 3.5%,var(--panel))}
+.row[hidden]{display:none}
+.row.flagged{border-left-color:var(--warn)}
+.row.failed{border-left-color:var(--bad);background:var(--bad-bg)}
+.row.approved{border-left-color:var(--ok)}
+.row.flash{animation:flash 1.3s ease-out}
+@keyframes flash{from{background:var(--flash)}to{background:var(--panel)}}
+.c-meta{grid-area:m;display:flex;flex-direction:column;align-items:flex-start;font-size:11.5px;color:var(--mut);gap:2px;min-width:0}
+.c-meta .mh{display:flex;align-items:center;gap:6px;max-width:100%}
+.c-meta .spk{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:0}
+.c-meta b{color:var(--ink);font-size:12.5px;background:var(--panel2);border-radius:99px;padding:1px 8px;font-variant-numeric:tabular-nums}
+.c-meta .cps{font-variant-numeric:tabular-nums}
+.c-src{grid-area:s;white-space:pre-wrap;word-break:break-word;color:color-mix(in srgb,var(--ink) 72%,var(--panel));font-size:14px;line-height:1.55;padding-top:5px}
+.c-tr{grid-area:t;min-width:0}
+.c-ta{display:block;width:100%;resize:none;min-height:2.9em;line-height:1.55;font-size:14.5px;field-sizing:content;overflow:hidden;background:var(--panel2);border:1px solid transparent;border-radius:9px;padding:5px 9px}
+.row:hover .c-ta{border-color:var(--line)}
+.c-ta:focus{background:var(--panel);border-color:var(--acc)}
+.row.locked .c-ta{color:var(--mut)}
+.flags{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+.chip{font-size:11px;padding:1px 7px;border-radius:99px;background:var(--panel2);color:var(--mut)}
+.chip.warn{background:var(--warn-bg);color:var(--warn)}
+.chip.bad{background:var(--bad-bg);color:var(--bad)}
+.chip.info{background:var(--info-bg);color:var(--info)}
+.chip.ok{background:var(--ok-bg);color:var(--ok)}
+.note{font-size:12px;color:var(--info);margin-top:3px;white-space:pre-wrap}
+.note:empty{display:none}
+.c-act{grid-area:a;display:flex;gap:4px;align-items:flex-start;justify-content:flex-end;padding-top:2px}
+.ib{width:28px;height:28px;border:1px solid var(--line);border-radius:8px;background:var(--panel);cursor:pointer;display:grid;place-items:center;font-size:13px;padding:0;color:inherit}
+.ib:hover{background:var(--panel2)}
+.ib.on{background:var(--ok-bg);border-color:var(--ok);color:var(--ok)}
+.ib.on.lk{background:var(--info-bg);border-color:var(--info);color:var(--info)}
+.c-act .ib{opacity:.5;transition:opacity .12s}
+.row:hover .c-act .ib,.row:focus-within .c-act .ib,.c-act .ib.on{opacity:1}
+@media (hover:none){.c-act .ib{opacity:1}}
+.panel{grid-column:1/-1;border-top:1px dashed var(--line);padding-top:8px;display:flex;flex-direction:column;gap:8px}
+.panel[hidden]{display:none}
+.p-line{display:flex;gap:6px;flex-wrap:wrap}
+.p-line input{flex:1;min-width:200px}
+.p-out{font-size:13px}
+.alt{display:flex;gap:8px;align-items:flex-start;padding:6px 8px;border:1px solid var(--line);border-radius:8px;margin-bottom:5px}
+.alt span{flex:1;white-space:pre-wrap}
+.alt em{color:var(--mut);font-size:11.5px;font-style:normal}
+ins{background:var(--ok-bg);color:var(--ok);text-decoration:none;border-radius:3px;padding:0 1px}
+del{background:var(--bad-bg);color:var(--bad);border-radius:3px;padding:0 1px}
+.diff{padding:8px;border:1px solid var(--line);border-radius:8px;white-space:pre-wrap;background:var(--panel2)}
+.logbox{border-top:1px solid var(--line);background:var(--panel);max-height:34vh;display:flex;flex-direction:column}
+.logbox summary{padding:6px 16px;cursor:pointer;font-size:12.5px;color:var(--mut)}
+#log{overflow:auto;padding:0 16px 8px;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;max-height:26vh}
+#log .l.warn{color:var(--warn)} #log .l.err{color:var(--bad)} #log .l.ok{color:var(--ok)}
+dialog{border:1px solid var(--line);border-radius:14px;background:var(--panel);color:var(--ink);padding:0;width:min(1000px,94vw);max-height:92vh;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+dialog::backdrop{background:rgba(10,12,18,.55)}
+.dlg-h{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
+.dlg-h h2{margin:0;font-size:16px;flex:1}
+.dlg-b{padding:14px 16px;overflow:auto;max-height:calc(92vh - 120px)}
+.dlg-f{display:flex;gap:8px;justify-content:flex-end;padding:10px 16px;border-top:1px solid var(--line);position:sticky;bottom:0;background:var(--panel)}
+.cx-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px 12px}
+.cx-grid .wide{grid-column:span 2}.cx-grid .full{grid-column:1/-1}
+table.t{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:4px}
+table.t th{text-align:left;font-size:11px;text-transform:uppercase;color:var(--mut);padding:4px 4px;font-weight:600}
+table.t td{padding:2px 3px;vertical-align:top}
+table.t input{padding:5px 7px}
+table.t td:last-child{width:30px}
+h4.sec{margin:16px 0 2px;font-size:13px;display:flex;align-items:center;gap:8px}
+.src-list{font-size:12.5px;display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.src-list a{color:var(--info);text-decoration:none;border:1px solid var(--line);border-radius:99px;padding:2px 9px}
+#toast{position:fixed;right:16px;bottom:16px;display:flex;flex-direction:column;gap:8px;z-index:100}
+.toast-i{background:#1f2430;color:#fff;padding:9px 14px;border-radius:9px;box-shadow:0 6px 24px rgba(0,0,0,.3);max-width:420px;font-size:13px}
+.pm-wrap{display:grid;grid-template-columns:250px minmax(0,1fr);gap:16px}
+.pm-list{display:flex;flex-direction:column;gap:6px}
+.pm-item{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:8px 10px;cursor:pointer}
+.pm-item:hover{background:var(--panel2)}
+.pm-item.on{border-color:var(--acc);background:var(--info-bg)}
+.pm-item small{color:var(--mut);font-size:11.5px}
+.pm-main h3{margin:0 0 2px;font-size:15px}
+.pm-vars{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin:8px 0}
+.pm-var{border:0;cursor:pointer;font-family:ui-monospace,Menlo,Consolas,monospace}
+#pmText{width:100%;min-height:360px;font:12.5px/1.55 ui-monospace,Menlo,Consolas,monospace;resize:vertical;white-space:pre-wrap}
+.pm-main details{margin-top:10px;border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+.pm-main summary{cursor:pointer;font-size:12.5px;color:var(--mut)}
+.pm-main pre{margin:8px 0 2px;max-height:320px;overflow:auto;white-space:pre-wrap;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;background:var(--panel2);border-radius:8px;padding:8px 10px}
+@media (max-width:980px){.pm-wrap{grid-template-columns:1fr}.pm-list{flex-direction:row;overflow:auto}.pm-item{min-width:170px}}
+.spk{font-size:10.5px;color:var(--info);word-break:break-word;line-height:1.25;margin-top:2px}
+.warnbox{background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:13px}
+@media (max-width:999px){
+  .app{grid-template-columns:minmax(0,1fr)}
+  .side,.rside,.main{grid-column:1}
+  .side,.rside{display:flex;position:fixed;top:0;bottom:0;z-index:60;width:min(92vw,400px);box-shadow:0 0 40px rgba(0,0,0,.35);visibility:hidden;transition:transform .22s ease,visibility 0s .22s}
+  .side{left:0;transform:translateX(-105%);border-right:1px solid var(--line)}
+  .rside{right:0;transform:translateX(105%);border-left:1px solid var(--line)}
+  .app.l-open .side,.app.r-open .rside{transform:none;visibility:visible;transition:transform .22s ease}
+  .scrim{display:block;position:fixed;inset:0;background:rgba(10,12,18,.5);z-index:55;opacity:0;pointer-events:none;transition:opacity .2s}
+  .app.l-open .scrim,.app.r-open .scrim{opacity:1;pointer-events:auto}
+  .cx-grid{grid-template-columns:1fr 1fr}
+  :root{--cols:92px minmax(0,1fr) minmax(0,1fr) 96px}
+}
+@media (max-width:720px){
+  .head-row{display:none}
+  .row{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"m a" "s s" "t t";padding:10px 12px 12px 10px;gap:6px 10px}
+  .c-meta{flex-direction:row;align-items:center;flex-wrap:wrap;gap:4px 8px}
+  .c-src{padding-top:0}
+  .tb-group{margin-left:0}
+  .tb-group .tx{display:none}
+  .search{max-width:none}
+  #pStats{display:none}
+  #toast{left:12px;right:12px}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <div class="scrim" id="scrim"></div>
+
+  <aside class="side" id="lside" aria-label="Cài đặt">
+    <div class="sd-head"><span class="sd-title">Cài đặt</span><button class="ib tgl" id="btnLClose" title="Thu gọn cột trái" aria-label="Thu gọn cột trái"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="14" height="12" rx="2.5"/><path d="M7 3v12"/></svg></button></div>
+    <div class="sd-body" id="cards">
+    <details class="card" data-card="keys" open>
+      <summary><span class="grip" role="button" tabindex="0" title="Giữ chuột và kéo để đổi vị trí (hoặc dùng phím ↑ ↓)" aria-label="Kéo để đổi vị trí khung"><svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor" aria-hidden="true"><circle cx="3" cy="3" r="1.5"/><circle cx="9" cy="3" r="1.5"/><circle cx="3" cy="8" r="1.5"/><circle cx="9" cy="8" r="1.5"/><circle cx="3" cy="13" r="1.5"/><circle cx="9" cy="13" r="1.5"/></svg></span><span>Khóa API (xoay vòng)</span></summary>
+      <div class="card-b">
+      <label class="f">Dán mỗi key một dòng (khuyên dùng 8 key từ 8 project khác nhau)
+        <textarea id="keys" rows="5" data-cfg="keys" spellcheck="false" placeholder="AIza...&#10;AIza...&#10;AIza..."></textarea>
+      </label>
+      <div class="btns">
+        <button class="btn sm" id="btnTest">Kiểm tra key</button>
+        <button class="btn sm" id="btnModels">Tải danh sách model</button>
+        <button class="btn sm ghost" id="btnClearKeys">Xóa key</button>
+      </div>
+      <div id="keyChips"></div>
+      <p class="hint">Key chỉ lưu trong trình duyệt này (localStorage) và chỉ được gửi tới Google. Mỗi key chạy một yêu cầu tại một thời điểm, gặp lỗi 429 sẽ tự nghỉ và chuyển sang key khác.</p>
+      </div>
+    </details>
+
+    <details class="card" data-card="file" open>
+      <summary><span class="grip" role="button" tabindex="0" title="Giữ chuột và kéo để đổi vị trí (hoặc dùng phím ↑ ↓)" aria-label="Kéo để đổi vị trí khung"><svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor" aria-hidden="true"><circle cx="3" cy="3" r="1.5"/><circle cx="9" cy="3" r="1.5"/><circle cx="3" cy="8" r="1.5"/><circle cx="9" cy="8" r="1.5"/><circle cx="3" cy="13" r="1.5"/><circle cx="9" cy="13" r="1.5"/></svg></span><span>File &amp; ngôn ngữ</span></summary>
+      <div class="card-b">
+      <div class="drop" id="drop"><b>Kéo thả file .srt vào đây</b><br>hoặc bấm để chọn file</div>
+      <div class="grid2">
+        <label class="f">Ngôn ngữ gốc<input type="text" list="langs" data-cfg="src"></label>
+        <label class="f">Dịch sang<input type="text" list="langs" data-cfg="tgt"></label>
+      </div>
+      <label class="f">Mã hóa file
+        <select id="enc">
+          <option value="utf-8">UTF-8 (mặc định)</option><option value="utf-16le">UTF-16 LE</option><option value="windows-1252">Windows-1252 (Latin)</option>
+          <option value="windows-1258">Windows-1258 (Việt)</option><option value="windows-1251">Windows-1251 (Cyrillic)</option><option value="gbk">GBK (Trung giản thể)</option>
+          <option value="big5">Big5 (Trung phồn thể)</option><option value="shift_jis">Shift_JIS (Nhật)</option><option value="euc-kr">EUC-KR (Hàn)</option><option value="windows-874">Windows-874 (Thái)</option>
+        </select>
+      </label>
+      <label class="f">Tên phim / tập (gợi ý, để trống = AI tự nhận diện)<input type="text" id="hint" placeholder="vd: Parasite 2019, hoặc Breaking Bad S01E03"></label>
+      <div class="stat" id="fileInfo">Chưa có file.</div>
+      </div>
+    </details>
+
+    <details class="card" data-card="model" open>
+      <summary><span class="grip" role="button" tabindex="0" title="Giữ chuột và kéo để đổi vị trí (hoặc dùng phím ↑ ↓)" aria-label="Kéo để đổi vị trí khung"><svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor" aria-hidden="true"><circle cx="3" cy="3" r="1.5"/><circle cx="9" cy="3" r="1.5"/><circle cx="3" cy="8" r="1.5"/><circle cx="9" cy="8" r="1.5"/><circle cx="3" cy="13" r="1.5"/><circle cx="9" cy="13" r="1.5"/></svg></span><span>Mô hình &amp; chất lượng</span></summary>
+      <div class="card-b">
+      <label class="f">Model dịch (lượt 1)<input type="text" list="modelList" data-cfg="modelTr"></label>
+      <label class="f">Model biên tập (lượt 2)<input type="text" list="modelList" data-cfg="modelEd"></label>
+      <label class="f">Model tìm ngữ cảnh<input type="text" list="modelList" data-cfg="modelCtx"></label>
+      <label class="f">Model dự phòng (tự dùng khi mọi key hết quota ngày của model chính; để trống = tắt)<input type="text" list="modelList" data-cfg="modelFb"></label>
+      <label class="f row2"><input type="checkbox" data-cfg="useSearch"> Dùng Google Search để tìm thông tin phim</label>
+      <label class="f row2"><input type="checkbox" data-cfg="doSpeakers"> Tự gán người nói / người nghe cho từng dòng (giúp chọn xưng hô)</label>
+      <label class="f row2"><input type="checkbox" data-cfg="doEdit"> Biên tập lượt 2 (AI đọc lại, sửa xưng hô &amp; thuật ngữ)</label>
+      <label class="f">Phạm vi biên tập lượt 2
+        <select data-cfg="edMode"><option value="all">Tất cả dòng (chất lượng cao nhất)</option><option value="smart">Thông minh: dòng có cờ, biên các lô, mẫu 1/3 (tiết kiệm quota)</option></select>
+      </label>
+      <label class="f row2"><input type="checkbox" data-cfg="doAudit"> Quét nhất quán toàn phim (tên, thuật ngữ, xưng hô)</label>
+      <label class="f row2"><input type="checkbox" data-cfg="doTighten"> Tự rút gọn dòng đọc quá nhanh / quá dài</label>
+      <label class="f row2"><input type="checkbox" data-cfg="confPause"> Tự dừng cho tôi duyệt khi nhận diện phim kém tin cậy</label>
+      <label class="f row2"><input type="checkbox" data-cfg="pauseAfterCtx"> Dừng để tôi duyệt ngữ cảnh trước khi dịch</label>
+      <div class="grid2">
+        <label class="f">Số dòng / lô<input type="number" min="5" max="120" data-cfg="batch"></label>
+        <label class="f">Nhiệt độ<input type="number" min="0" max="2" step="0.1" data-cfg="temp"></label>
+        <label class="f">Tối đa ký tự / dòng<input type="number" min="10" max="100" data-cfg="maxChars"></label>
+        <label class="f">Tối đa ký tự / giây<input type="number" min="5" max="60" data-cfg="maxCps"></label>
+        <label class="f">Giãn cách mỗi key (giây)<input type="number" min="0" max="60" step="0.5" data-cfg="gap"></label>
+        <label class="f">Số luồng song song (0 = theo số key)<input type="number" min="0" max="16" data-cfg="parallel"></label>
+        <label class="f">Suy luận (thinking)
+          <select data-cfg="thinking"><option value="default">Mặc định của model</option><option value="off">Tắt (nhanh)</option><option value="low">Thấp</option><option value="high">Cao</option></select>
+        </label>
+        <label class="f">Ngôn ngữ ghi chú<input type="text" list="langs" data-cfg="noteLang"></label>
+      </div>
+      <p class="hint">Tên model có thể khác tùy thời điểm: bấm "Tải danh sách model" để chọn từ danh sách thật của key bạn. Google Search grounding có thể không có trên key miễn phí; khi đó app tự chuyển sang dùng kiến thức của model + nội dung phụ đề.</p>
+      </div>
+    </details>
+
+    <details class="card" data-card="ctx" open>
+      <summary><span class="grip" role="button" tabindex="0" title="Giữ chuột và kéo để đổi vị trí (hoặc dùng phím ↑ ↓)" aria-label="Kéo để đổi vị trí khung"><svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor" aria-hidden="true"><circle cx="3" cy="3" r="1.5"/><circle cx="9" cy="3" r="1.5"/><circle cx="3" cy="8" r="1.5"/><circle cx="9" cy="8" r="1.5"/><circle cx="3" cy="13" r="1.5"/><circle cx="9" cy="13" r="1.5"/></svg></span><span>Ngữ cảnh phim</span></summary>
+      <div class="card-b">
+      <div class="stat" id="ctxSummary">Chưa có. Sẽ tự động xác định khi bấm "Dịch tự động".</div>
+      <div class="btns">
+        <button class="btn sm" id="btnCtxOpen">Xem / sửa ngữ cảnh</button>
+        <button class="btn sm" id="btnCtxRun">Tìm lại ngữ cảnh</button>
+        <button class="btn sm ghost" id="btnCtxExp">Xuất</button>
+        <button class="btn sm ghost" id="btnCtxImp">Nhập</button>
+      </div>
+      <p class="hint">Xuất bộ ngữ cảnh để dùng lại cho các tập tiếp theo của cùng bộ phim.</p>
+      </div>
+    </details>
+
+    <details class="card" data-card="prompt" open>
+      <summary><span class="grip" role="button" tabindex="0" title="Giữ chuột và kéo để đổi vị trí (hoặc dùng phím ↑ ↓)" aria-label="Kéo để đổi vị trí khung"><svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor" aria-hidden="true"><circle cx="3" cy="3" r="1.5"/><circle cx="9" cy="3" r="1.5"/><circle cx="3" cy="8" r="1.5"/><circle cx="9" cy="8" r="1.5"/><circle cx="3" cy="13" r="1.5"/><circle cx="9" cy="13" r="1.5"/></svg></span><span>Prompt nâng cao</span></summary>
+      <div class="card-b">
+      <div class="stat" id="pmSummary">Đang dùng prompt mặc định.</div>
+      <div class="btns"><button class="btn sm" id="btnPrompts">⚙ Xem / chỉnh prompt</button></div>
+      <p class="hint">Xem và sửa từng system prompt (dịch, biên tập, nhất quán…) kèm nút khôi phục mặc định. Phần định dạng đầu ra JSON luôn được giữ cố định nên sửa prompt không làm hỏng việc đọc kết quả.</p>
+      </div>
+    </details>
+
+    <details class="card" data-card="adv">
+      <summary><span class="grip" role="button" tabindex="0" title="Giữ chuột và kéo để đổi vị trí (hoặc dùng phím ↑ ↓)" aria-label="Kéo để đổi vị trí khung"><svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor" aria-hidden="true"><circle cx="3" cy="3" r="1.5"/><circle cx="9" cy="3" r="1.5"/><circle cx="3" cy="8" r="1.5"/><circle cx="9" cy="8" r="1.5"/><circle cx="3" cy="13" r="1.5"/><circle cx="9" cy="13" r="1.5"/></svg></span><span>Nâng cao</span></summary>
+      <div class="card-b">
+      <div class="btns">
+        <button class="btn sm" id="btnOnlyTr">Chỉ dịch lượt 1</button>
+        <button class="btn sm" id="btnOnlyEd">Chỉ biên tập lượt 2</button>
+        <button class="btn sm" id="btnOnlySp">Chỉ gán người nói</button>
+        <button class="btn sm" id="btnOnlyAu">Chỉ quét nhất quán</button>
+        <button class="btn sm" id="btnOnlyTg">Chỉ rút gọn dòng dài</button>
+        <button class="btn sm" id="btnQA">Chạy lại kiểm tra</button>
+        <button class="btn sm" id="btnReset">Dịch lại toàn bộ…</button>
+        <button class="btn sm" id="btnWipe">Xóa dự án</button>
+      </div>
+      <p class="hint">Dừng giữa chừng rồi bấm "Dịch tự động" lần nữa sẽ tiếp tục từ chỗ dở (dòng đã dịch được giữ nguyên, dòng đã khóa không bao giờ bị ghi đè).</p>
+      </div>
+    </details>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="progress">
+      <div class="pg-row">
+        <button class="ib tgl" id="btnLOpen" title="Mở / thu gọn cài đặt" aria-label="Mở hoặc thu gọn cột cài đặt"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="14" height="12" rx="2.5"/><path d="M7 3v12"/></svg></button>
+        <div class="pg-main" id="pLabel">Sẵn sàng</div>
+        <span id="pStats"></span>
+        <div class="quick-run"><button class="btn primary sm" id="btnRun2">▶ Dịch tự động</button><button class="btn danger sm" id="btnStop2" hidden>⏹ Dừng</button></div>
+        <button class="ib tgl" id="btnROpen" title="Mở / thu gọn bảng điều khiển" aria-label="Mở hoặc thu gọn bảng điều khiển"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="14" height="12" rx="2.5"/><path d="M11 3v12"/></svg></button>
+      </div>
+      <div class="bar"><i id="barFill"></i></div>
+      <div class="ticker" id="ticker"></div>
+    </div>
+    <div class="toolbar">
+      <select id="fltSel">
+        <option value="all">Tất cả dòng</option><option value="flag">Có cảnh báo</option><option value="todo">Chưa duyệt</option>
+        <option value="edited">Tôi đã sửa</option><option value="aiedit">AI đã biên tập</option><option value="locked">Đã khóa</option><option value="empty">Chưa dịch</option>
+      </select>
+      <div class="search"><span aria-hidden="true">⌕</span><input type="text" id="fltQ" placeholder="Tìm trong bản gốc / bản dịch…"></div>
+      <div class="tb-group">
+        <button class="btn sm" id="btnFR" title="Tìm &amp; thay trong bản dịch"><span class="ic">⇄</span><span class="tx">Tìm &amp; thay</span></button>
+        <button class="btn sm" id="btnUndo" title="Hoàn tác (Ctrl+Z)"><span class="ic">↶</span><span class="tx">Hoàn tác</span></button>
+        <button class="btn sm" id="btnRedo" title="Làm lại (Ctrl+Y)"><span class="ic">↷</span><span class="tx">Làm lại</span></button>
+      </div>
+      <label class="switch"><input type="checkbox" id="follow"><i></i><span>Tự cuộn theo dòng mới</span></label>
+    </div>
+    <div class="head-row"><div>#</div><div>Bản gốc</div><div title="Sửa trực tiếp trong ô. Ctrl+Enter = duyệt và xuống dòng kế">Bản dịch <span style="text-transform:none;letter-spacing:0;font-weight:400">· sửa trực tiếp · Ctrl+Enter = duyệt &amp; xuống dòng</span></div><div></div></div>
+    <div class="list" id="list">
+      <div class="empty"><h2>Bắt đầu bằng một file phụ đề</h2>Dán API key, kéo file .srt vào ô "File &amp; ngôn ngữ", chọn ngôn ngữ đích rồi bấm <b>Dịch tự động</b>.</div>
+    </div>
+    <details class="logbox" id="logBox"><summary>Nhật ký <span id="logCount"></span></summary><div id="log"></div></details>
+  </main>
+
+  <aside class="rside" id="rside" aria-label="Điều khiển">
+    <div class="sd-head"><div class="brand"><span class="logo">◐</span> SubLens</div><span class="sd-title"></span><button class="ib tgl" id="btnRClose" title="Thu gọn cột phải" aria-label="Thu gọn cột phải"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="14" height="12" rx="2.5"/><path d="M11 3v12"/></svg></button></div>
+    <div class="sd-body">
+      <div class="run-box">
+        <button class="btn primary" id="btnRun">▶ Dịch tự động</button>
+        <button class="btn danger" id="btnStop" hidden>⏹ Dừng</button>
+      </div>
+      <h4>Tiến trình</h4>
+      <ol class="steps" id="steps">
+      <li data-s="ctx">① Ngữ cảnh</li><li data-s="sp">② Người nói</li><li data-s="tr">③ Dịch</li><li data-s="ed">④ Biên tập</li><li data-s="cn">⑤ Nhất quán</li><li data-s="tg">⑥ Rút gọn</li><li data-s="qa">⑦ Kiểm tra</li>
+    </ol>
+      <h4>Tổng quan</h4>
+      <div class="stats-grid" id="stats"></div>
+      <h4>Xuất / Lưu</h4>
+      <div class="exp-list" id="fileMenu">
+          <button data-exp="tr">Xuất SRT (chỉ bản dịch)</button>
+          <button data-exp="src-tr">Xuất SRT song ngữ (gốc ở trên)</button>
+          <button data-exp="tr-src">Xuất SRT song ngữ (dịch ở trên)</button>
+          <hr>
+          <button id="btnSaveProj">Lưu dự án (.json)</button>
+          <button id="btnOpenProj">Mở dự án (.json)</button>
+        </div>
+    </div>
+  </aside>
+</div>
+
+<dialog id="ctxDlg">
+  <div class="dlg-h"><h2>Ngữ cảnh phim</h2><span class="stat" id="ctxConf"></span><button class="btn sm" id="ctxClose">Đóng</button></div>
+  <div class="dlg-b">
+    <div class="warnbox" id="ctxWarn" hidden>⚠ <b>Chưa chắc đã nhận diện đúng phim</b> (độ tin cậy thấp). Ngữ cảnh sai còn tệ hơn không có ngữ cảnh: hãy nhập đúng tên phim / tập vào ô bên dưới rồi bấm "Tìm lại", hoặc tự sửa các mục, rồi mới tiếp tục dịch.</div>
+    <div class="p-line" style="margin-bottom:10px"><input type="text" id="ctxHint" placeholder="Gợi ý tên phim / tập để AI tìm lại chính xác hơn, vd: Parasite 2019"><button class="btn sm" id="ctxRetry">🔎 Tìm lại bằng gợi ý</button></div>
+    <p class="hint" style="margin-top:0">Toàn bộ nội dung dưới đây được đưa vào mọi lượt dịch. Sửa trực tiếp: mục nào bạn sửa/thêm sẽ được giữ lại khi chạy "Tìm lại ngữ cảnh".</p>
+    <div class="cx-grid">
+      <label class="f wide">Tên phim / tập<input type="text" data-cx="title"></label>
+      <label class="f">Năm<input type="text" data-cx="year"></label>
+      <label class="f">Loại<input type="text" data-cx="kind" placeholder="phim lẻ / tập phim / hoạt hình…"></label>
+      <label class="f wide">Thể loại<input type="text" data-cx="genre"></label>
+      <label class="f wide">Bối cảnh (thời đại, địa điểm)<input type="text" data-cx="setting"></label>
+      <label class="f full">Giọng điệu &amp; văn phong<input type="text" data-cx="tone"></label>
+      <label class="f full">Tóm tắt cốt truyện<textarea rows="4" data-cx="synopsis"></textarea></label>
+      <label class="f full">Hướng dẫn dịch (xưng hô chung, mức độ trang trọng, cách xử lý tiếng lóng…)<textarea rows="3" data-cx="style"></textarea></label>
+      <label class="f full">Ghi chú thêm của bạn (luôn được giữ lại)<textarea rows="2" data-cx="extra" placeholder="vd: giữ nguyên chức danh tiếng Anh, không dịch tên bài hát…"></textarea></label>
+    </div>
+    <h4 class="sec">Nhân vật &amp; cách xưng hô <button class="btn sm" id="addChar">+ Thêm</button></h4>
+    <table class="t"><thead><tr><th>Tên gốc</th><th>Tên khi dịch</th><th>Giới tính</th><th>Tuổi</th><th>Vai trò / quan hệ</th><th>Xưng hô (tự xưng &amp; gọi người khác)</th><th></th></tr></thead><tbody id="cxChars"></tbody></table>
+    <h4 class="sec">Cặp xưng hô (ai nói với ai, gọi nhau thế nào) <button class="btn sm" id="addRel">+ Thêm</button></h4>
+    <table class="t"><thead><tr><th>Người A</th><th>Người B</th><th>A tự xưng &amp; gọi B</th><th>B tự xưng &amp; gọi A</th><th>Ghi chú (khi nào đổi)</th><th></th></tr></thead><tbody id="cxRels"></tbody></table>
+    <h4 class="sec">Thuật ngữ &amp; tên riêng <button class="btn sm" id="addGloss">+ Thêm</button></h4>
+    <table class="t"><thead><tr><th>Gốc (dùng | cho biến thể)</th><th>Bản dịch bắt buộc</th><th>Ghi chú</th><th></th></tr></thead><tbody id="cxGloss"></tbody></table>
+    <h4 class="sec">Nguồn tìm kiếm</h4>
+    <div class="src-list" id="cxSrc"></div>
+  </div>
+  <div class="dlg-f"><button class="btn" id="ctxCancel" hidden>Hủy dịch</button><button class="btn primary" id="ctxGo" hidden>Tiếp tục dịch ▶</button></div>
+</dialog>
+
+<dialog id="pmDlg" style="width:min(1120px,96vw)">
+  <div class="dlg-h"><h2>Prompt nâng cao</h2><span class="stat" id="pmInfo"></span><button class="btn sm" id="pmClose">Đóng</button></div>
+  <div class="dlg-b">
+    <div class="pm-wrap">
+      <div class="pm-list" id="pmList"></div>
+      <div class="pm-main">
+        <h3 id="pmTitle"></h3>
+        <p class="hint" id="pmDesc" style="margin-top:0"></p>
+        <div class="pm-vars" id="pmVars"></div>
+        <textarea id="pmText" spellcheck="false"></textarea>
+        <div class="warnbox" id="pmWarn" style="margin:8px 0 0" hidden></div>
+        <details id="pmContractBox"><summary>Phần định dạng đầu ra (cố định, luôn được nối vào cuối prompt — không chỉnh được)</summary><pre id="pmContract"></pre></details>
+        <details id="pmPrevBox"><summary>Xem prompt hoàn chỉnh sẽ được gửi đi (đã ghép biến và ngữ cảnh hiện tại)</summary><pre id="pmPreview"></pre></details>
+        <p class="hint">Thay đổi được lưu tự động trong trình duyệt và áp dụng cho các lần gọi tiếp theo. Prompt viết bằng tiếng Anh cho model hiểu tốt nhất; bạn có thể viết thêm chỉ dẫn bằng tiếng Việt.</p>
+      </div>
+    </div>
+  </div>
+  <div class="dlg-f"><button class="btn" id="pmResetAll">Khôi phục tất cả</button><button class="btn primary" id="pmReset">Khôi phục mặc định mục này</button></div>
+</dialog>
+
+<dialog id="frDlg" style="width:min(520px,94vw)">
+  <div class="dlg-h"><h2>Tìm &amp; thay trong bản dịch</h2><button class="btn sm" id="frClose">Đóng</button></div>
+  <div class="dlg-b">
+    <label class="f">Tìm<input type="text" id="frFind"></label>
+    <label class="f">Thay bằng<input type="text" id="frRep"></label>
+    <label class="f row2"><input type="checkbox" id="frCase"> Phân biệt hoa thường</label>
+    <label class="f row2"><input type="checkbox" id="frWord"> Chỉ khớp nguyên từ</label>
+    <label class="f row2"><input type="checkbox" id="frGloss"> Thêm vào thuật ngữ (khóa cách dịch này cho các lần sau)</label>
+    <div class="stat" id="frCount"></div>
+  </div>
+  <div class="dlg-f"><button class="btn" id="frCnt">Đếm</button><button class="btn primary" id="frDo">Thay tất cả</button></div>
+</dialog>
+
+<datalist id="langs">
+  <option value="Tự động nhận diện"><option value="English"><option value="Tiếng Việt"><option value="中文 (简体)"><option value="中文 (繁體)"><option value="日本語 (Japanese)">
+  <option value="한국어 (Korean)"><option value="Français"><option value="Deutsch"><option value="Español"><option value="Português"><option value="Русский"><option value="ภาษาไทย (Thai)">
+  <option value="Bahasa Indonesia"><option value="Italiano"><option value="Türkçe"><option value="العربية (Arabic)"><option value="हिन्दी (Hindi)">
+</datalist>
+<datalist id="charList"></datalist>
+<datalist id="modelList"><option value="gemini-2.5-flash"><option value="gemini-2.5-flash-lite"><option value="gemini-2.5-pro"></datalist>
+<div id="toast"></div>
+<input type="file" id="fileIn" accept=".srt,.vtt,.txt" hidden>
+<input type="file" id="projIn" accept=".json" hidden>
+<input type="file" id="ctxIn" accept=".json" hidden>
+
+<script>
+'use strict';
+/* =====================================================================
+   PHẦN THUẦN (không đụng DOM) – có test riêng
+   ===================================================================== */
+// <PURE>
+const API = 'https://generativelanguage.googleapis.com/v1beta';
+const pad2 = n => String(n).padStart(2, '0');
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function toMs(h, m, s, ms) { return ((+h * 60 + +m) * 60 + +s) * 1000 + parseInt((ms + '00').slice(0, 3), 10); }
+function fmtTime(ms) {
+  ms = Math.max(0, Math.round(ms));
+  const h = Math.floor(ms / 3600000), m = Math.floor(ms / 60000) % 60, s = Math.floor(ms / 1000) % 60, x = ms % 1000;
+  return pad2(h) + ':' + pad2(m) + ':' + pad2(s) + ',' + String(x).padStart(3, '0');
+}
+function parseSRT(raw) {
+  raw = String(raw).replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').trim();
+  const out = [];
+  for (const b of raw.split(/\n{2,}/)) {
+    const lines = b.split('\n');
+    let k = 0;
+    while (k < lines.length && !/-->/.test(lines[k])) k++;
+    if (k >= lines.length) continue;
+    const m = lines[k].match(/(?:(\d+):)?(\d+):(\d+)[,.](\d+)\s*-->\s*(?:(\d+):)?(\d+):(\d+)[,.](\d+)/);
+    if (!m) continue;
+    const text = lines.slice(k + 1).join('\n').trim();
+    out.push({ start: toMs(m[1] || 0, m[2], m[3], m[4]), end: toMs(m[5] || 0, m[6], m[7], m[8]), text });
+  }
+  return out;
+}
+function buildSRT(rows, mode) {
+  return rows.map((r, k) => {
+    const tr = (r.t && r.t.trim()) ? r.t.trim() : r.text;
+    let body = mode === 'tr' ? tr : mode === 'src-tr' ? r.text + '\n' + tr : tr + '\n' + r.text;
+    body = body.replace(/\n{2,}/g, '\n');
+    return (k + 1) + '\n' + fmtTime(r.start) + ' --> ' + fmtTime(r.end) + '\n' + body + '\n';
+  }).join('\n');
+}
+const stripTags = s => String(s).replace(/<[^>]*>/g, '').replace(/\{\\[^}]*\}/g, '');
+const normTxt = s => stripTags(s).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+const parseKeys = txt => [...new Set(String(txt || '').split(/[\s,;]+/).map(s => s.trim()).filter(s => s.length >= 20))];
+const isAuto = s => !s || /tự động|auto/i.test(s);
+
+const _reCache = new Map();
+function termRegex(term) {
+  let re = _reCache.get(term);
+  if (re) return re;
+  const e = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const cjk = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(term);
+  re = cjk ? new RegExp(e, 'i') : new RegExp('(?<![\\p{L}\\p{N}])' + e + '(?![\\p{L}\\p{N}])', 'iu');
+  _reCache.set(term, re);
+  return re;
+}
+const variants = s => String(s || '').split('|').map(x => x.trim()).filter(Boolean);
+
+function qaFlags(r, cfg, glossary) {
+  const f = [];
+  const t = (r.t || '').trim();
+  if (!t) { if (stripTags(r.text).trim()) f.push({ k: 'empty', m: 'Chưa có bản dịch' }); return f; }
+  const srcPlain = stripTags(r.text).trim();
+  const tPlain = stripTags(t).replace(/\s+/g, ' ').trim();
+  if (srcPlain.length > 3 && /\p{L}/u.test(srcPlain) && normTxt(srcPlain) === normTxt(tPlain))
+    f.push({ k: 'same', m: 'Giống hệt bản gốc (có thể chưa được dịch)' });
+  const dur = Math.max(0.3, (r.end - r.start) / 1000);
+  const len = tPlain.replace(/\n/g, '').length;
+  const cps = len / dur;
+  if (cps > cfg.maxCps) f.push({ k: 'long', m: 'Đọc quá nhanh: ' + cps.toFixed(1) + ' ký tự/giây (giới hạn ' + cfg.maxCps + ')' });
+  const lines = t.split('\n');
+  if (lines.length > 2) f.push({ k: 'lines', m: lines.length + ' dòng (nên tối đa 2)' });
+  const longest = Math.max(...lines.map(l => stripTags(l).trim().length));
+  if (longest > cfg.maxChars) f.push({ k: 'wide', m: 'Có dòng dài ' + longest + ' ký tự (giới hạn ' + cfg.maxChars + ')' });
+  const tg = s => (String(s).match(/<\/?(i|b|u|font)\b[^>]*>/gi) || []).length;
+  if (tg(r.text) !== tg(t)) f.push({ k: 'tags', m: 'Thẻ định dạng (<i>, <b>…) không khớp bản gốc' });
+  let g = 0;
+  for (const e of (glossary || [])) {
+    if (g >= 2) break;
+    const vs = variants(e.src), ts = variants(e.target);
+    if (!vs.length || !ts.length) continue;
+    if (vs.some(v => termRegex(v).test(r.text)) && !ts.some(x => t.toLowerCase().includes(x.toLowerCase()))) {
+      f.push({ k: 'gloss', m: 'Thuật ngữ: "' + vs[0] + '" nên dịch là "' + ts[0] + '"' });
+      g++;
+    }
+  }
+  if (r.aiCheck) f.push({ k: 'ai', m: r.note || 'AI đề nghị kiểm tra lại' });
+  return f;
+}
+
+class ObjStream {
+  constructor() { this.buf = ''; this.pos = 0; this.depth = 0; this.inStr = false; this.esc = false; this.start = -1; }
+  feed(chunk) {
+    this.buf += chunk;
+    const out = [];
+    for (; this.pos < this.buf.length; this.pos++) {
+      const c = this.buf[this.pos];
+      if (this.inStr) { if (this.esc) this.esc = false; else if (c === '\\') this.esc = true; else if (c === '"') this.inStr = false; continue; }
+      if (c === '"') { if (this.depth > 0) this.inStr = true; continue; }
+      if (c === '{') { if (this.depth === 0) this.start = this.pos; this.depth++; }
+      else if (c === '}' && this.depth > 0) {
+        this.depth--;
+        if (this.depth === 0) { try { out.push(JSON.parse(this.buf.slice(this.start, this.pos + 1))); } catch (e) {} this.start = -1; }
+      }
+    }
+    return out;
+  }
+}
+function flattenObjs(objs) {
+  const out = [];
+  for (const o of objs) {
+    if (o && o.id != null) out.push(o);
+    else if (o && typeof o === 'object') for (const v of Object.values(o)) if (Array.isArray(v)) for (const x of v) if (x && x.id != null) out.push(x);
+  }
+  return out;
+}
+function parseRetryDelay(body) {
+  let sec = null, daily = false, zero = false, info = '';
+  try {
+    const j = JSON.parse(body), e = j.error || j;
+    for (const d of (e.details || [])) {
+      if (d.retryDelay) { const m = String(d.retryDelay).match(/([\d.]+)s/); if (m) sec = parseFloat(m[1]); }
+      for (const v of (d.violations || [])) {
+        if (/PerDay/i.test(v.quotaId || '')) daily = true;
+        if (v.quotaId && !info) info = String(v.quotaId).replace(/-FreeTier$/, '') + (v.quotaValue != null ? ' = ' + v.quotaValue : '');
+        if (String(v.quotaValue) === '0') zero = true;
+      }
+    }
+    const msg = e.message || '';
+    if (/limit:\s*0\b/i.test(msg)) zero = true;
+    if (sec == null) { const m = msg.match(/retry in ([\d.]+)s/i); if (m) sec = parseFloat(m[1]); }
+    if (/per day|PerDay/i.test(msg)) daily = true;
+  } catch (_) {}
+  return { sec, daily, zero, info };
+}
+function errMsg(body) { try { const j = JSON.parse(body); return (j.error && j.error.message) || String(body); } catch (_) { return String(body).slice(0, 400); } }
+
+function diffWords(a, b) {
+  const A = String(a).split(/(\s+)/), B = String(b).split(/(\s+)/), n = A.length, m = B.length;
+  if (n * m > 400000) return esc(b);
+  const dp = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--)
+    dp[i][j] = A[i] === B[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const out = []; let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (A[i] === B[j]) { out.push(esc(B[j])); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) { out.push('<del>' + esc(A[i]) + '</del>'); i++; }
+    else { out.push('<ins>' + esc(B[j]) + '</ins>'); j++; }
+  }
+  while (i < n) out.push('<del>' + esc(A[i++]) + '</del>');
+  while (j < m) out.push('<ins>' + esc(B[j++]) + '</ins>');
+  return out.join('');
+}
+function guessTitle(fileName) {
+  let s = String(fileName || '').replace(/\.(srt|vtt|txt)$/i, '').replace(/\.[a-z]{2,3}$/i, m => /^\.(en|vi|fr|de|es|pt|ru|ja|ko|zh|th|id|it|tr|ar|hi)$/i.test(m) ? '' : m);
+  s = s.replace(/[._]+/g, ' ').replace(/\[[^\]]*\]|\([^)]*\)/g, ' ');
+  const cut = s.search(/\b(480p|720p|1080p|2160p|4k|bluray|brrip|bdrip|web-?dl|webrip|hdtv|dvdrip|x26[45]|h26[45]|hevc|yify|rarbg)\b/i);
+  if (cut > 3) s = s.slice(0, cut);
+  return s.replace(/\s+/g, ' ').trim();
+}
+// </PURE>
+
+/* =====================================================================
+   TIỆN ÍCH GIAO DIỆN
+   ===================================================================== */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+function h(tag, props, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (v == null || v === false) continue;
+    if (k === 'class') e.className = v;
+    else if (k === 'dataset') Object.assign(e.dataset, v);
+    else if (k === 'text') e.textContent = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (k in e && typeof v !== 'string') e[k] = v;
+    else e.setAttribute(k, v === true ? '' : v);
+  }
+  for (const c of kids.flat()) if (c != null) e.append(c.nodeType ? c : document.createTextNode(c));
+  return e;
+}
+const sleep = (ms, signal) => new Promise((res, rej) => {
+  if (signal && signal.aborted) return rej(new DOMException('Aborted', 'AbortError'));
+  const t = setTimeout(() => { if (signal) signal.removeEventListener('abort', ab); res(); }, ms);
+  const ab = () => { clearTimeout(t); rej(new DOMException('Aborted', 'AbortError')); };
+  if (signal) signal.addEventListener('abort', ab, { once: true });
+});
+const isAbort = e => e && (e.name === 'AbortError');
+function toast(msg, ms = 3500) { const t = h('div', { class: 'toast-i', text: msg }); $('#toast').append(t); setTimeout(() => t.remove(), ms); }
+let logN = 0;
+function log(msg, kind = 'info') {
+  const d = h('div', { class: 'l ' + kind, text: new Date().toLocaleTimeString('vi-VN') + '  ' + msg });
+  const box = $('#log'); box.prepend(d);
+  while (box.children.length > 400) box.lastChild.remove();
+  $('#logCount').textContent = '(' + (++logN) + ')';
+  if (kind === 'err') $('#logBox').open = true;
+}
+function download(name, text, type = 'text/plain') {
+  const a = h('a', { href: URL.createObjectURL(new Blob([text], { type: type + ';charset=utf-8' })), download: name });
+  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+/* =====================================================================
+   CÀI ĐẶT
+   ===================================================================== */
+const SKEY = 'sublens.settings.v1';
+const DEF = {
+  keys: '', modelTr: 'gemini-2.5-flash', modelEd: 'gemini-2.5-flash', modelCtx: 'gemini-2.5-flash', modelFb: 'gemini-2.5-flash-lite',
+  src: 'Tự động nhận diện', tgt: 'Tiếng Việt', noteLang: 'Tiếng Việt',
+  useSearch: true, doEdit: true, pauseAfterCtx: false,
+  batch: 40, temp: 0.3, maxChars: 42, maxCps: 21, gap: 6.5, parallel: 0, thinking: 'default',
+  edMode: 'all', doSpeakers: true, doAudit: true, doTighten: true, confPause: true, prompts: {}
+};
+let cfg = { ...DEF };
+try { Object.assign(cfg, JSON.parse(localStorage.getItem(SKEY) || '{}')); } catch (_) {}
+if (!cfg.prompts || typeof cfg.prompts !== 'object' || Array.isArray(cfg.prompts)) cfg.prompts = {};
+const BATCH_CHARS = 6500;
+function saveCfg() { try { localStorage.setItem(SKEY, JSON.stringify(cfg)); } catch (_) {} }
+
+/* =====================================================================
+   TRẠNG THÁI DỰ ÁN
+   ===================================================================== */
+const emptyCtx = () => ({ title: '', year: '', kind: '', genre: '', setting: '', tone: '', synopsis: '', style: '', extra: '', characters: [], relations: [], glossary: [], sources: [], confidence: '' });
+const newStage = () => ({ ctx: 'idle', sp: 'idle', tr: 'idle', ed: 'idle', cn: 'idle', tg: 'idle', qa: 'idle' });
+const S = { fileName: '', hint: '', rows: [], ctx: emptyCtx(), stage: newStage() };
+let fileBuf = null;
+const RUN = { running: false, ctrl: null, signal: null };
+const NEVER = new AbortController().signal;
+const undoStack = [], redoStack = [];
+
+/* ---- IndexedDB ---- */
+const idb = {
+  db: null,
+  open() { return new Promise((res, rej) => { const q = indexedDB.open('sublens', 1); q.onupgradeneeded = () => q.result.createObjectStore('kv'); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); },
+  async get(k) { try { this.db = this.db || await this.open(); return await new Promise((res, rej) => { const r = this.db.transaction('kv').objectStore('kv').get(k); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); } catch (_) { return null; } },
+  async set(k, v) { try { this.db = this.db || await this.open(); await new Promise((res, rej) => { const t = this.db.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = res; t.onerror = () => rej(t.error); }); } catch (_) {} },
+  async del(k) { try { this.db = this.db || await this.open(); await new Promise((res, rej) => { const t = this.db.transaction('kv', 'readwrite'); t.objectStore('kv').delete(k); t.oncomplete = res; t.onerror = () => rej(t.error); }); } catch (_) {} }
+};
+function snapshot() {
+  return { v: 1, fileName: S.fileName, hint: S.hint, src: cfg.src, tgt: cfg.tgt, ctx: S.ctx, stage: S.stage,
+    rows: S.rows.map(r => ({ i: r.i, start: r.start, end: r.end, text: r.text, t: r.t, d1: r.d1, d2: r.d2, ai0: r.ai0, note: r.note, aiCheck: r.aiCheck, locked: r.locked, approved: r.approved, edited: r.edited, failed: r.failed, spk: r.spk, to: r.to, spkSrc: r.spkSrc, tight: r.tight, audit: r.audit })) };
+}
+let saveTimer = null;
+function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 1200); }
+function saveNow() { clearTimeout(saveTimer); if (S.rows.length) idb.set('project', snapshot()); }
+function loadSnapshot(p) {
+  S.fileName = p.fileName || ''; S.hint = p.hint || '';
+  S.ctx = Object.assign(emptyCtx(), p.ctx || {});
+  S.stage = Object.assign(newStage(), p.stage || {});
+  for (const k in S.stage) if (S.stage[k] === 'run') S.stage[k] = 'idle';
+  S.rows = (p.rows || []).map((r, i) => ({ i, start: r.start, end: r.end, text: r.text, t: r.t || '', d1: r.d1 || '', d2: r.d2 || '', ai0: r.ai0 || '', note: r.note || '', aiCheck: !!r.aiCheck, locked: !!r.locked, approved: !!r.approved, edited: !!r.edited, failed: !!r.failed, spk: r.spk || '', to: r.to || '', spkSrc: r.spkSrc || '', tight: !!r.tight, audit: !!r.audit, flags: [] }));
+  if (p.src) cfg.src = p.src; if (p.tgt) cfg.tgt = p.tgt;
+  bindCfgToUI(); $('#hint').value = S.hint;
+  qaAll(true); renderAll(); renderSteps(); renderCtxSummary(); renderFileInfo(); updateStats();
+}
+
+/* =====================================================================
+   BỘ XOAY VÒNG API KEY
+   ===================================================================== */
+class FatalError extends Error {}
+class QuotaError extends FatalError {}
+class ApiError extends Error { constructor(status, body) { super('HTTP ' + status); this.status = status; this.body = body; } }
+class BlockedError extends Error {}
+
+const pool = {
+  keys: [], rr: 0,
+  set(list) {
+    const old = new Map(this.keys.map(k => [k.key, k]));
+    this.keys = list.map(key => old.get(key) || { key, state: 'ok', cool: {}, nextAt: 0, used: 0, fail: 0, busy: false, note: '' });
+  },
+  alive() { return this.keys.filter(k => k.state !== 'dead'); },
+  async acquire(scope, signal) {
+    for (;;) {
+      if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      const now = Date.now(), alive = this.alive();
+      if (!this.keys.length) throw new FatalError('Chưa có API key nào.');
+      if (!alive.length) throw new FatalError('Tất cả API key đều không dùng được (sai key hoặc bị từ chối). Hãy kiểm tra lại key.');
+      const n = this.keys.length;
+      for (let j = 0; j < n; j++) {
+        const k = this.keys[(this.rr + j) % n];
+        if (k.state === 'dead' || k.busy || now < (k.cool[scope] || 0) || now < k.nextAt) continue;
+        this.rr = (this.rr + j + 1) % n;
+        k.busy = true; k.nextAt = now + cfg.gap * 1000; k.used++;
+        renderKeys();
+        return k;
+      }
+      if (alive.every(k => (k.cool[scope] || 0) > now + 15 * 60 * 1000))
+        throw new QuotaError('Tất cả key đã hết quota ngày cho model này. Tiến độ đã được lưu; hãy thử lại sau hoặc đổi model.');
+      await sleep(300, signal);
+    }
+  },
+  release(k) { k.busy = false; renderKeys(); }
+};
+function keyIdx(k) { return pool.keys.indexOf(k) + 1; }
+function renderKeys() {
+  const box = $('#keyChips'); if (!box) return;
+  const now = Date.now();
+  box.replaceChildren(...pool.keys.map((k, i) => {
+    const cool = (k.cool[cfg.modelTr] || 0) - now;
+    let st = 'ok', txt = 'sẵn sàng';
+    if (k.state === 'dead') { st = 'dead'; txt = k.note || 'không dùng được'; }
+    else if (k.busy) { st = 'busy'; txt = 'đang chạy'; }
+    else if (cool > 0) { st = 'cool'; txt = cool > 120000 ? (k.note || 'chờ') + ' ~' + Math.ceil(cool / 60000) + ' phút' : (k.note || 'chờ') + ' ' + Math.ceil(cool / 1000) + 's'; }
+    return h('div', { class: 'kc ' + st, title: k.note || '' }, h('b', {}, '#' + (i + 1)), h('span', {}, '…' + k.key.slice(-4)), h('em', {}, txt), h('small', {}, k.used + ' lượt'));
+  }));
+}
+setInterval(renderKeys, 1000);
+
+/* =====================================================================
+   GỌI GEMINI (streaming, xoay key, thử lại)
+   ===================================================================== */
+const SAFETY = ['HARM_CATEGORY_HARASSMENT', 'HARM_CATEGORY_HATE_SPEECH', 'HARM_CATEGORY_SEXUALLY_EXPLICIT', 'HARM_CATEGORY_DANGEROUS_CONTENT'].map(category => ({ category, threshold: 'BLOCK_NONE' }));
+function buildBody({ system, user, schema, temp, tools, thinking, degrade }) {
+  const body = { contents: [{ role: 'user', parts: [{ text: user }] }], generationConfig: { temperature: temp }, safetySettings: SAFETY };
+  if (system) body.systemInstruction = { parts: [{ text: system }] };
+  if (schema && !degrade.noSchema) { body.generationConfig.responseMimeType = 'application/json'; body.generationConfig.responseSchema = schema; }
+  if (tools) body.tools = tools;
+  if (thinking && thinking !== 'default' && !degrade.noThinking)
+    body.generationConfig.thinkingConfig = { thinkingBudget: thinking === 'off' ? 0 : thinking === 'low' ? 1024 : 8192 };
+  return body;
+}
+async function gemini(o) {
+  try { return await geminiCore(o); }
+  catch (e) {
+    if (e instanceof QuotaError && cfg.modelFb && cfg.modelFb.trim() && cfg.modelFb !== o.model && !o.tools) {
+      if (!gemini._fbWarned || Date.now() - gemini._fbWarned > 60000) { gemini._fbWarned = Date.now(); log('Mọi key đã hết quota ngày của ' + o.model + ' → dùng model dự phòng ' + cfg.modelFb, 'warn'); }
+      return await geminiCore({ ...o, model: cfg.modelFb });
+    }
+    throw e;
+  }
+}
+async function geminiCore(o) {
+  const { model, system, user, schema, tools, stream = true, onText, onAttempt, idleMs = 70000 } = o;
+  const temp = o.temp != null ? o.temp : cfg.temp;
+  const signal = o.signal || NEVER;
+  const scope = model + (tools ? '#search' : '');
+  const degrade = { noSchema: false, noThinking: false };
+  let attempt = 0, rate = 0;
+  for (;;) {
+    if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+    const key = await pool.acquire(scope, signal);
+    const ctrl = new AbortController();
+    const onAbort = () => ctrl.abort();
+    signal.addEventListener('abort', onAbort);
+    let timer = null, timedOut = false;
+    const arm = ms => { clearTimeout(timer); timer = setTimeout(() => { timedOut = true; ctrl.abort(); }, ms); };
+    try {
+      onAttempt && onAttempt();
+      arm(stream ? idleMs : 240000);
+      const body = buildBody({ system, user, schema, temp, tools, thinking: cfg.thinking, degrade });
+      const url = API + '/models/' + encodeURIComponent(model) + (stream ? ':streamGenerateContent?alt=sse' : ':generateContent');
+      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key.key }, body: JSON.stringify(body), signal: ctrl.signal });
+      if (!res.ok) throw new ApiError(res.status, await res.text());
+      const acc = { text: '', finish: '', block: '', usage: null, sources: [], queries: [] };
+      const ev = j => {
+        if (j.error) throw new ApiError(j.error.code || 500, JSON.stringify(j));
+        if (j.promptFeedback && j.promptFeedback.blockReason) acc.block = j.promptFeedback.blockReason;
+        const c = j.candidates && j.candidates[0];
+        if (j.usageMetadata) acc.usage = j.usageMetadata;
+        if (!c) return;
+        for (const p of ((c.content && c.content.parts) || [])) if (typeof p.text === 'string' && !p.thought) { acc.text += p.text; onText && onText(p.text); }
+        if (c.finishReason) acc.finish = c.finishReason;
+        const gm = c.groundingMetadata;
+        if (gm) {
+          for (const g of (gm.groundingChunks || [])) if (g.web && g.web.uri) acc.sources.push({ title: g.web.title || g.web.uri, uri: g.web.uri });
+          for (const q of (gm.webSearchQueries || [])) acc.queries.push(q);
+        }
+      };
+      if (stream) {
+        const reader = res.body.getReader(), dec = new TextDecoder();
+        let buf = '';
+        const flush = chunk => { for (const line of chunk.split('\n')) if (line.startsWith('data:')) { const d = line.slice(5).trim(); if (d && d !== '[DONE]') { try { ev(JSON.parse(d)); } catch (e) { if (e instanceof ApiError) throw e; } } } };
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          arm(idleMs);
+          buf += dec.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+          let i;
+          while ((i = buf.indexOf('\n\n')) >= 0) { flush(buf.slice(0, i)); buf = buf.slice(i + 2); }
+        }
+        if (buf.trim()) flush(buf);
+      } else ev(await res.json());
+      if (!acc.text.trim()) throw new BlockedError(acc.block || acc.finish || 'EMPTY');
+      return acc;
+    } catch (e) {
+      if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      if (e instanceof ApiError) {
+        const st = e.status, msg = errMsg(e.body);
+        if (st === 429) {
+          const { sec, daily, zero, info } = parseRetryDelay(e.body);
+          const long = daily || zero;
+          const wait = long ? 1800 : Math.min(120, (sec || 30) + 2);
+          key.cool[scope] = Date.now() + wait * 1000; key.note = zero ? 'quota = 0' : daily ? 'hết quota ngày' : 'chờ giới hạn tốc độ'; key.fail++;
+          log('Key #' + keyIdx(key) + ' bị 429 [' + model + (tools ? ' + Search' : '') + '] ' + (zero ? 'quota = 0 (key/model này không có quota miễn phí)' : daily ? 'hết quota ngày' : 'giới hạn tốc độ, chờ ~' + wait + 's') + (info ? ' · ' + info : '') + ' → chuyển key khác', 'warn');
+          if (tools && zero) throw new Error('Google Search grounding không có quota trên key miễn phí này (limit 0).');
+          if (++rate > 80) throw new Error('Bị giới hạn 429 quá nhiều lần liên tiếp.');
+          continue;
+        }
+        if (st === 400 || st === 401 || st === 403) {
+          if (/API key not valid|API_KEY_INVALID|key.*expired|leaked/i.test(msg)) { key.state = 'dead'; key.note = 'key sai / bị khóa'; log('Key #' + keyIdx(key) + ' không hợp lệ: ' + msg.slice(0, 120), 'err'); continue; }
+          if (/thinking/i.test(msg) && !degrade.noThinking) { degrade.noThinking = true; continue; }
+          if (/JSON mode|response_mime_type|responseMimeType|responseSchema|response schema|mime type/i.test(msg) && schema && !degrade.noSchema) { degrade.noSchema = true; log('Model không hỗ trợ JSON schema, chuyển sang chế độ văn bản.', 'warn'); continue; }
+          if (tools) throw new Error('Tìm kiếm Google không dùng được: ' + msg.slice(0, 200));
+          if (st === 403) { key.state = 'dead'; key.note = 'bị từ chối (403)'; log('Key #' + keyIdx(key) + ' bị từ chối: ' + msg.slice(0, 140), 'err'); continue; }
+          throw new Error('Lỗi 400 từ API: ' + msg.slice(0, 300));
+        }
+        if (st === 404) throw new FatalError('Model "' + model + '" không tồn tại hoặc không hỗ trợ generateContent. Bấm "Tải danh sách model" để chọn model đúng.');
+      }
+      attempt++;
+      if (e instanceof BlockedError) { if (attempt >= 3) throw e; await sleep(700 * attempt, signal); continue; }
+      if (attempt >= 6) throw e;
+      if (timedOut) log('Yêu cầu bị treo, thử lại bằng key khác…', 'warn');
+      await sleep(Math.min(20000, 1500 * 2 ** attempt) + Math.random() * 500, signal);
+    } finally {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+      pool.release(key);
+    }
+  }
+}
+
+/* =====================================================================
+   PROMPT
+   ===================================================================== */
+const T = t => ({ type: 'STRING', ...(t || {}) });
+const SCH_TR = { type: 'ARRAY', items: { type: 'OBJECT', properties: { id: { type: 'INTEGER' }, t: T(), n: T() }, required: ['id', 't'], propertyOrdering: ['id', 't', 'n'] } };
+const SCH_ED = { type: 'ARRAY', items: { type: 'OBJECT', properties: { id: { type: 'INTEGER' }, t: T(), n: T(), c: { type: 'BOOLEAN' } }, required: ['id', 't'], propertyOrdering: ['id', 't', 'n', 'c'] } };
+const SCH_ALT = { type: 'ARRAY', items: { type: 'OBJECT', properties: { t: T(), tone: T() }, required: ['t'] } };
+const SCH_CTX = {
+  type: 'OBJECT',
+  properties: {
+    title: T(), year: T(), kind: T(), genre: T(), setting: T(), tone: T(), synopsis: T(), style_guide: T(), confidence: T(),
+    characters: { type: 'ARRAY', items: { type: 'OBJECT', properties: { name: T(), name_target: T(), gender: T(), age: T(), role: T(), address: T() }, required: ['name'] } },
+    relations: { type: 'ARRAY', items: { type: 'OBJECT', properties: { a: T(), b: T(), a_to_b: T(), b_to_a: T(), note: T() }, required: ['a', 'b'] } },
+    glossary: { type: 'ARRAY', items: { type: 'OBJECT', properties: { src: T(), target: T(), note: T() }, required: ['src', 'target'] } }
+  },
+  required: ['title', 'synopsis', 'characters', 'glossary']
+};
+const langDesc = () => isAuto(cfg.src) ? 'the source language (detect it yourself)' : cfg.src;
+
+function contextPack(filterText) {
+  const c = S.ctx, L = [];
+  const head = [c.title && 'Title: ' + c.title + (c.year ? ' (' + c.year + ')' : ''), c.kind && 'Type: ' + c.kind, c.genre && 'Genre: ' + c.genre, c.setting && 'Setting / era: ' + c.setting, c.tone && 'Tone: ' + c.tone].filter(Boolean);
+  if (head.length) L.push(...head);
+  if (c.synopsis) L.push('Synopsis: ' + c.synopsis);
+  if (c.style) L.push('Translation style guide: ' + c.style);
+  if (c.extra) L.push("Translator's extra instructions (highest priority): " + c.extra);
+  if (c.characters.length) {
+    L.push('', 'CHARACTERS (original name → name in translation | gender | age | role | how they address themselves/others):');
+    for (const x of c.characters) if (x.name) L.push('- ' + x.name + (x.nameT ? ' → ' + x.nameT : '') + ' | ' + (x.gender || '?') + ' | ' + (x.age || '?') + ' | ' + (x.role || '') + ' | ' + (x.address || ''));
+  }
+  const rel = (c.relations || []).filter(x => x.a && x.b && (x.ab || x.ba));
+  if (rel.length) {
+    L.push('', 'ADDRESS RULES PER PAIR (how each side refers to themself and addresses the other):');
+    for (const x of rel) L.push('- ' + x.a + ' ↔ ' + x.b + ': ' + x.a + ' → ' + (x.ab || '?') + ' | ' + x.b + ' → ' + (x.ba || '?') + (x.note ? ' (' + x.note + ')' : ''));
+  }
+  let gl = c.glossary.filter(g => g.src && g.target);
+  if (gl.length > 200 && filterText) { const low = filterText.toLowerCase(); gl = gl.filter(g => variants(g.src).some(v => low.includes(v.toLowerCase()))); }
+  if (gl.length) { L.push('', 'GLOSSARY (mandatory):'); for (const g of gl) L.push('- ' + g.src + ' => ' + g.target + (g.note ? '  (' + g.note + ')' : '')); }
+  return L.length ? L.join('\n') : '(no context available – rely on the dialogue itself)';
+}
+/* =====================================================================
+   PROMPT HỆ THỐNG: mặc định + ghi đè của người dùng + ghép biến
+   Mỗi prompt = THÂN (chỉnh được) + PHẦN ĐỊNH DẠNG ĐẦU RA (cố định, luôn nối ở cuối).
+   ===================================================================== */
+const VAR_DOC = {
+  SRC: 'Ngôn ngữ gốc', TGT: 'Ngôn ngữ đích', NOTE_LANG: 'Ngôn ngữ ghi chú (ô "Ngôn ngữ ghi chú")', MAX_CHARS: 'Số ký tự tối đa mỗi dòng',
+  MAX_CPS: 'Số ký tự/giây tối đa', TODAY: 'Ngày hôm nay (YYYY-MM-DD)',
+  TGT_GUIDE: 'Nội dung của mục "Hướng dẫn ngôn ngữ đích" (xưng hô, văn phong riêng của ngôn ngữ đích)',
+  CONTEXT: 'Bộ ngữ cảnh phim: tóm tắt, nhân vật, cặp xưng hô, thuật ngữ, ghi chú của bạn'
+};
+
+function defaultTgtGuide() {
+  const t = String(cfg.tgt || '').toLowerCase(), head = 'TARGET-LANGUAGE GUIDE ({{TGT}})\n';
+  if (/việt|vietnam/.test(t)) return head + `- Pronouns and forms of address are the heart of Vietnamese subtitles. Never map "I/you" mechanically to "tôi/bạn". Choose how each speaker refers to themself and addresses the listener (tôi, anh, chị, em, cậu, tớ, mình, mày, tao, ông, bà, cô, chú, bác, dì, cháu, con, ba/bố, mẹ/má, thầy, sếp, ngài, ta, ngươi, huynh, muội...) from age, gender, rank, intimacy and mood. "Bạn" suits only neutral, polite talk between peers or strangers; overusing it sounds like a textbook.
+- Spoken Vietnamese often drops the subject and pronouns when the context is clear: omit them instead of repeating "anh ấy / cô ấy / họ" in every sentence.
+- Avoid calques: do not render every "a/an/the" as "một/cái"; avoid "bị/được bởi" passives copied from the source; avoid stacking "đang/đã/sẽ"; avoid long "của" chains and "một cách + adjective".
+- Use sentence-final particles and discourse markers (nhé, nhỉ, à, hả, đấy, chứ, mà, thôi, nào, đi, cơ) where the register calls for them; they make dialogue sound spoken. Do not overuse them.
+- Foreign personal names keep their original Latin spelling (no phonetic respelling) unless the glossary says otherwise. For Chinese period or costume works use Sino-Vietnamese (Hán-Việt) readings for names, titles and terms, as in the glossary.
+- Keep profanity and insults natural for Vietnamese speakers and at the same intensity; no bookish words in street speech, no slang in formal speech.
+- Vietnamese lines get short when pronouns, fillers and redundant words are dropped: use this to meet the reading speed instead of cutting meaning.`;
+  if (/english|tiếng anh/.test(t)) return head + `- Write natural spoken English with contractions (I'm, don't, it's); keep them out only when the register is stiff or archaic. Avoid translationese and over-literal transfer of honorifics: express politeness through word choice (sir, ma'am, please, would you...) instead of suffixes.
+- Languages such as Chinese, Japanese, Korean, Thai and Vietnamese leave subjects, gender and number implicit: infer them from context and make them explicit with the right he / she / they / it / I / you, but drop "you" in imperatives.
+- Prefer common phrasal verbs and everyday idioms over formal Latinate words in casual speech. Use standard punctuation; use ellipses and dashes only where speech is really broken off.`;
+  if (/中文|chinese|trung|汉|漢|mandarin|cantonese|quảng đông/.test(t)) return head + `- Write natural spoken Chinese in the requested variety (Simplified or Traditional; Mandarin unless told otherwise). Avoid Europeanized syntax: long attributive chains, excessive 被 passives and 的 chains, stiff written connectives in casual speech.
+- Choose 你 / 您 and titles (先生, 小姐, 老师, 师父, 大哥...) by relationship and politeness; keep each pair consistent. For period or costume works use fitting classical vocabulary and address (朕, 臣, 本宫, 在下...) only when the source implies that setting.
+- Use the full-width punctuation conventions of Chinese subtitles. Keep lines compact: Chinese carries a lot of meaning per character.`;
+  if (/日本|japan|nhật/.test(t)) return head + `- Write natural spoken Japanese with the correct speech level for each speaker and listener: です/ます (polite), だ / plain, and rough, masculine, feminine or dialect styles when the character calls for them. Choose first- and second-person words (私, 僕, 俺, あたし, あなた, お前, 君, name + さん/くん/ちゃん/先生...) from relationship and personality, and omit them when the context is clear.
+- Use sentence-final particles (よ, ね, わ, ぞ, ぜ, かな) sparingly to characterise a speaker. Write compactly, with kanji and kana as a Japanese subtitler would, and keep each pair's speech level consistent unless the story changes it.`;
+  if (/한국|korea|hàn/.test(t)) return head + `- Write natural spoken Korean with the correct speech level for each speaker→listener pair (합쇼체, 해요체, 해체/반말) and honorific endings (-시-) chosen by age, rank and relationship. Use the right address terms (오빠, 형, 누나, 언니, 선배, 님, 씨, 선생님...) and omit subjects and pronouns when the context is clear.
+- Keep each pair's speech level consistent unless the story changes the relationship (a quarrel, growing intimacy, a switch to 반말).`;
+  if (/ไทย|thai|thái/.test(t)) return head + `- Write natural spoken Thai with the right polite particles (ครับ, ค่ะ, คะ, นะ, สิ, ล่ะ) for the speaker's gender and the situation. Choose pronouns (ฉัน, ผม, ดิฉัน, เรา, คุณ, เธอ, เขา, มึง, กู...) and kinship terms (พี่, น้อง, ลุง, ป้า...) from relationship and register, and omit pronouns when the context is clear. Do not put spaces inside words; use spaces to separate phrases.`;
+  if (/indonesia|malay/.test(t)) return head + `- Write natural spoken Indonesian. Choose pronouns and address terms (aku, saya, gue, kamu, Anda, lo, kau, Bapak, Ibu, Mas, Mbak, Kak, Pak, Bu...) by formality, region and relationship, and keep each pair consistent. Use particles (dong, sih, kok, deh, lah, ya) where the register calls for them; avoid stiff formal vocabulary in casual speech.`;
+  if (/fran|pháp|deutsch|german|đức|espa|spanish|tây ban nha|portugu|bồ đào|ital|(^|\s)ý($|\s)|русск|russian|(^|\s)nga($|\s)|türk|turk|thổ/.test(t)) return head + `- Choose the familiar or formal second person (tu/vous, du/Sie, tú/usted, tu/você, tu/Lei, ты/вы, sen/siz) from the relationship and keep it consistent for each speaker→listener pair; switch only when the story does (growing intimacy, anger, a change of status).
+- Use the natural spoken forms of {{TGT}} (elisions, contractions, colloquial negation), correct gender and number agreement for each speaker and addressee, and the subtitle punctuation conventions of {{TGT}}.`;
+  return head + `- Use natural, idiomatic spoken {{TGT}}. If {{TGT}} marks politeness, formality or social relationship (pronouns, honorifics, verb forms, particles, T–V distinction), choose them from the characters' relationships and keep them consistent for each speaker→listener pair. Follow the subtitle conventions of {{TGT}}.`;
+}
+
+const PROMPTS = {
+  research: {
+    title: 'Tra cứu phim', stage: '① Ngữ cảnh · bước A (Google Search)',
+    desc: 'Chỉ dẫn cho model khi tra cứu web để nhận diện phim/tập và thu thập thông tin nền. Kết quả là ghi chú tự do, sau đó được đưa sang bước tổng hợp ngữ cảnh.',
+    vars: ['SRC', 'TGT', 'NOTE_LANG', 'TODAY'], required: [], contract: () => '',
+    body: `You are a meticulous film and TV researcher with access to Google Search, preparing a briefing for a professional subtitle translator who works from {{SRC}} into {{TGT}}. Today is {{TODAY}}. Accuracy matters more than completeness: never invent facts; if you cannot identify the work with confidence, say so plainly.
+
+HOW TO SEARCH
+- Search exact dialogue quotes in quotation marks (alone and combined with words like "quote", "subtitles", "script", "transcript"), and distinctive names that appear in the dialogue. Cross-check candidate titles against several sources before concluding.
+- For a series, identify the exact episode (season, episode number, title) and what happens in it — not only the series.
+- Prefer official sources, reputable databases and episode guides. For localized names prefer the official {{TGT}} localization, then established fansub or fandom usage.
+
+WRITE COMPACT BULLET NOTES COVERING
+1. Identification: original title, official {{TGT}} title if any, year, movie or series episode, country, genre; your confidence and why (which quote or fact matched).
+2. Plot summary (spoilers allowed), setting and era, genre and tone, language register (archaic, slang, military, jargon...).
+3. Main characters: name as spelled in the original, how it is written in {{TGT}}, gender, approximate age, role; relationships (senior/junior, family, lovers, enemies); titles, ranks, nicknames.
+4. Important proper nouns, places, organisations, in-universe terms, catchphrases, running jokes — each with the official or widely accepted {{TGT}} rendering when one exists.
+5. How the characters would naturally address each other in {{TGT}} (pronouns, honorifics, politeness level) given their relationships.
+6. Cultural references, puns or wordplay in the sampled dialogue that need care when translating.`
+  },
+  ctxsynth: {
+    title: 'Tổng hợp ngữ cảnh', stage: '① Ngữ cảnh · bước B (JSON)',
+    desc: 'Biến ghi chú tra cứu + toàn bộ thoại thành bộ ngữ cảnh có cấu trúc: tóm tắt, nhân vật, cặp xưng hô, thuật ngữ, hướng dẫn phong cách, độ tin cậy.',
+    vars: ['SRC', 'TGT', 'NOTE_LANG'], required: [],
+    contract: () => `OUTPUT FORMAT (fixed): one JSON object matching the response schema: title, year, kind, genre, setting, tone, synopsis, style_guide, confidence, characters[], relations[], glossary[].`,
+    body: `You prepare the CONTEXT PACK for a professional subtitle translator who works from {{SRC}} into {{TGT}}. Inputs: RESEARCH NOTES (may be empty or imperfect) and the SUBTITLE TEXT (ground truth for how names are spelled and used). Never invent facts: if the work is not identified, build everything from the dialogue and set confidence to "low".
+
+LANGUAGE OF THE FIELDS: descriptive fields (synopsis, tone, setting, role, style_guide, notes) in {{NOTE_LANG}}. Fields that will be used inside the translation (name_target, glossary target, address, a_to_b, b_to_a) in {{TGT}}.
+
+FIELDS
+- title, year, kind, genre, setting, tone: from the research notes; empty string when unknown.
+- synopsis: 3–6 sentences covering the key relationships and, for an episode, what happens in it.
+- characters: up to 40 who speak or matter. name = original spelling as it appears in the dialogue; name_target = how it should appear in the translation; gender; age (approximate); role (job, relation, personality, speech register); address = concrete rules in {{TGT}} for how this character refers to themself and addresses the key others, derived from age, gender, rank and relationship (the real pronouns / honorifics / politeness levels of {{TGT}}; "n/a" if {{TGT}} has no such system).
+- relations: the 10–30 most important pairs who talk to each other. a, b = original names; a_to_b = how A refers to themself and addresses B in {{TGT}}; b_to_a = the same for B → A; note = when it changes during the story, if it does.
+- glossary: up to 120 entries: proper nouns, places, organisations, ranks/titles, special objects, in-universe terms, recurring catchphrases and idioms that need one fixed rendering. src = exact spelling as it appears in the dialogue; list spelling variants or transcription errors of the same name separated by "|". target = the decided translation (the official localization if known, otherwise a consistent choice following {{TGT}} conventions; keeping the original is allowed).
+- style_guide: 3–8 concrete sentences for this work: register, humour, profanity, formality, how to handle slang, jargon and songs, general rules for address in {{TGT}}.
+- confidence: "high" = the work/episode was confirmed by search sources and matches names or events in the dialogue; "medium" = plausible but not fully verified; "low" = not identified (everything is inferred from the dialogue).`
+  },
+  speakers: {
+    title: 'Gán người nói', stage: '② Người nói',
+    desc: 'Suy luận từng dòng ai đang nói và nói với ai (phụ đề không có tên người nói). Kết quả là gợi ý cho bước dịch để chọn đúng xưng hô.',
+    vars: ['SRC', 'TGT', 'CONTEXT'], required: ['CONTEXT'],
+    contract: () => `OUTPUT FORMAT (fixed): a JSON array with exactly one object per line to label: {"id": <same id>, "s": "<speaker>", "to": "<addressee>"}. Never label the context lines.`,
+    body: `You are a script supervisor performing SPEAKER ATTRIBUTION for film subtitles (source language: {{SRC}}). Subtitle files carry no speaker names. For each line decide who is speaking ("s") and who is being addressed ("to").
+
+EVIDENCE, strongest first
+1. Explicit cues: a character introducing themself ("I'm X"), vocatives and names (a name that is called is usually the ADDRESSEE, not the speaker), titles, self-reference.
+2. Conversation structure: answers follow questions; a reply comes from the person who was addressed; turns alternate; a subtitle that starts with a dash usually opens a new speaker.
+3. Gender, number, rank and age cues in the wording, and the relationships given in the CONTEXT PACK (CHARACTERS, ADDRESS RULES PER PAIR).
+4. Scene continuity from the neighbouring lines: the same speaker often continues over several items.
+
+RULES
+- Use the exact original names from the CHARACTERS list. For an unnamed person use a short role ("waiter", "doctor", "crowd", "voice on the phone"). Use "?" when you genuinely cannot tell — a wrong guess is worse than "?".
+- "to" is the main addressee: a character name, "group", "self" (monologue / thinking aloud), "audience" (narration) or "?".
+- Narration or voice-over: s = "narrator".
+- An item that contains two speakers (dialogue dashes): s = "A / B" and to = "B / A".
+- Non-speech items (sound effects, music, captions, on-screen text): s = "-" and to = "-".
+
+=== CONTEXT PACK ===
+{{CONTEXT}}`
+  },
+  translate: {
+    title: 'Dịch (lượt 1)', stage: '③ Dịch · cũng dùng khi dịch lại dòng / 3 phương án',
+    desc: 'Prompt quan trọng nhất: nguyên tắc dịch, xưng hô, thuật ngữ, độ dài, định dạng. Được gửi kèm bộ ngữ cảnh ở mọi lô dịch.',
+    vars: ['SRC', 'TGT', 'NOTE_LANG', 'MAX_CHARS', 'MAX_CPS', 'TGT_GUIDE', 'CONTEXT'], required: ['CONTEXT'],
+    contract: () => `OUTPUT FORMAT (fixed): a JSON array with exactly one object per line to translate: {"id": <same id>, "t": "<translation>"}. Optionally add "n": a very short note in {{NOTE_LANG}}, ONLY when the line is genuinely ambiguous, unintelligible or you made a debatable choice. Never skip, merge, split or reorder ids. Never output the context lines.`,
+    body: `You are a senior professional subtitle translator and localizer with decades of experience in film and TV. You translate subtitles from {{SRC}} into {{TGT}}. Quality is the top priority: the result must read as if a native {{TGT}} screenwriter had written it for this exact scene — never like a translation.
+
+PRIORITIES when rules conflict (highest first): (1) the translator's extra instructions in the CONTEXT PACK; (2) the GLOSSARY and the ADDRESS RULES; (3) accuracy of meaning; (4) natural, speakable {{TGT}}; (5) brevity and reading speed.
+
+HOW TO WORK
+1. Understand each line inside its scene before translating: use the neighbouring lines, the speaker/to hints and the CONTEXT PACK to resolve who speaks to whom, pronouns, ambiguity, irony, sarcasm, idioms, puns and cultural references.
+2. Translate meaning, intention, emotion and subtext — not words. Replace idioms, slang, jokes and references with natural {{TGT}} equivalents; when none exists, keep the effect rather than the wording. Never produce a literal calque that sounds foreign.
+3. Fragmented sentences: subtitles are often pieces of one sentence split across several items. Make each item read naturally on its own AND make the sequence form the correct sentence. Never move content from one item to another, and never merge or split items.
+4. Forms of address (pronouns, honorifics, kinship terms, politeness level, T–V distinction): follow the CHARACTERS notes and ADDRESS RULES PER PAIR. Keep each speaker→listener pair consistent through the whole film and change it only when the story changes their relationship (a quarrel, intimacy, a revealed identity...).
+5. Names, places, titles and terms: follow the GLOSSARY exactly (the source may contain spelling variants of a glossary term). For anything not in the glossary use the established {{TGT}} convention for that kind of name and stay consistent.
+6. Register and voice: match each speaker's age, class, education, mood and the scene (formal, street slang, archaic, military, childlike, drunk...). Keep profanity, insults and crude humour at the same intensity; never censor, soften, moralize or comment.
+7. Spoken-language noise: drop meaningless fillers and false starts ("uh", "you know", repeated words) unless they characterise the speaker or the hesitation matters to the scene. Keep stutters, trailing off ("...") and interruptions when they are expressive. Preserve questions, exclamations and tone markers.
+8. Brevity: subtitles are read in seconds. At most {{MAX_CHARS}} characters per line, at most 2 lines per item, about {{MAX_CPS}} characters per second. Condense wording — omit what the viewer can infer from the picture or the previous line — without losing essential information. Break a 2-line item at a natural phrase boundary with "\\n".
+9. Formatting: keep tags such as <i>…</i>, <b>, {\\an8} around the same words; keep the dialogue dash "- " when one item holds two speakers; keep sound or caption brackets like [door slams] or (laughs) but translate what is inside; keep ♪ and translate the meaning of sung lyrics; keep on-screen text and captions in the same form.
+10. Numbers, units, currency, dates and titles of works: write them the way {{TGT}} speakers naturally write or say them; do not convert units unless the scene needs it.
+11. Source defects: silently fix obvious typos or speech-recognition errors in the source when the intended meaning is clear; if a line is truly unintelligible, translate the most plausible reading and add a short note "n".
+12. Items and context lines may carry "speaker" / "to" hints (inferred automatically — they can be wrong). Use them together with ADDRESS RULES PER PAIR to choose pronouns, but ignore a hint when the dialogue clearly contradicts it.
+13. Context lines may carry a "translation": the wording already chosen for that line. Stay consistent with its terminology, names and forms of address, above all at the boundary between two batches. Never translate context lines again.
+14. If an item is only a name, number, music symbol or a sound that needs no translation, return it unchanged.
+
+{{TGT_GUIDE}}
+
+=== CONTEXT PACK ===
+{{CONTEXT}}`
+  },
+  edit: {
+    title: 'Biên tập (lượt 2)', stage: '④ Biên tập',
+    desc: 'Biên tập viên đọc lại bản nháp cùng bản gốc, chỉ sửa khi có lỗi rõ ràng (nghĩa, xưng hô, thuật ngữ, độ tự nhiên, mạch câu).',
+    vars: ['SRC', 'TGT', 'NOTE_LANG', 'MAX_CHARS', 'MAX_CPS', 'TGT_GUIDE', 'CONTEXT'], required: ['CONTEXT'],
+    contract: () => `OUTPUT FORMAT (fixed): a JSON array with exactly one object per line to review: {"id": <same id>, "t": "<final text>"}. Optionally add "n" (short note in {{NOTE_LANG}}) and "c": true (a human should still double-check this line). Never output the context lines.`,
+    body: `You are the senior subtitle editor and QA reviewer of a film subtitle project translated from {{SRC}} into {{TGT}}. You receive source subtitles with a first-draft translation. Deliver the final, broadcast-quality text. Think like a native {{TGT}} viewer who also masters {{SRC}}.
+
+REVIEW EVERY LINE, in this order of importance
+1. Accuracy: mistranslation, omission, addition, wrong tense / negation / numbers / quantity / polarity; misread idioms, jokes, sarcasm or cultural references; wrong referent of a pronoun.
+2. Forms of address: pronouns, honorifics or politeness levels that contradict ADDRESS RULES PER PAIR or the CHARACTERS notes, or that differ from neighbouring lines for the same speaker→listener pair without a story reason. Use the optional "speaker"/"to" hints (inferred, may be wrong) to check who talks to whom.
+3. Terminology: GLOSSARY violations, inconsistent names or terms.
+4. Naturalness: stiff, literal or translationese phrasing; wrong register for the speaker or scene; unnatural word order; fillers that should be dropped.
+5. Flow: fragments of one sentence must connect across consecutive lines; context lines show the chosen wording ("translation") — match it.
+6. Readability: at most {{MAX_CHARS}} characters per line, 2 lines, about {{MAX_CPS}} characters per second; broken or misplaced formatting tags.
+
+RULES
+- Be conservative. If a draft is already correct and natural, return it UNCHANGED, character for character. Change a line only when it contains an error from the list above or is clearly awkward; never rewrite for personal taste or to show that you did something.
+- When you fix a line, change as little as possible: keep the translator's good choices and repair only what is wrong.
+- Never merge, split, reorder or drop items; keep ids, tags and "\\n" line-break conventions; never add information that is not in the source.
+- Do not "correct" a form of address just because you would have chosen differently — only when it contradicts the rules or the context.
+- Add a short note "n" only when you made a significant change or you doubt something; set "c": true only when a human should still double-check the line.
+
+{{TGT_GUIDE}}
+
+=== CONTEXT PACK ===
+{{CONTEXT}}`
+  },
+  audit: {
+    title: 'Quét nhất quán toàn phim', stage: '⑤ Nhất quán',
+    desc: 'Model đọc cả phim một lần (gốc ⇒ dịch) để tìm tên, thuật ngữ, xưng hô bị dịch lệch giữa các lô mà từng lô không thấy được.',
+    vars: ['SRC', 'TGT', 'NOTE_LANG', 'TGT_GUIDE', 'CONTEXT'], required: ['CONTEXT'],
+    contract: () => `OUTPUT FORMAT (fixed): a JSON object {"fixes":[{"id","t","n"}],"glossary_additions":[{"src","target","note"}]}.
+- fixes: only lines that must change; "t" = the full corrected line; "n" = short note in {{NOTE_LANG}}; most important first, at most 200.
+- glossary_additions: the canonical decisions you made for names/terms that were inconsistent and are not in the glossary yet.
+Return {"fixes":[]} when the film is already consistent.`,
+    body: `You are the continuity editor of a complete subtitle translation from {{SRC}} into {{TGT}}. You now see the WHOLE film at once (source ⇒ current translation). Translators worked on separate batches and could not see each other: find the INCONSISTENCIES they could not see, and fix only those.
+
+LOOK FOR
+1. Names, places, organisations, titles/ranks and in-universe terms rendered in different ways → choose ONE canonical form: the GLOSSARY first, then the official or established form, then the most frequent one.
+2. The same speaker→listener pair using different pronouns / honorifics / politeness levels without a story reason (compare with ADDRESS RULES PER PAIR; the speaker/to hints in brackets are inferred and may be wrong, so verify them against the dialogue).
+3. Catchphrases, running jokes, recurring lines or repeated questions translated differently each time.
+4. A character whose register suddenly changes for no reason.
+5. Contradictions between lines (a number, a name, a relationship) that come from the translation, not from the source.
+
+DO NOT
+- fix style preferences, or retranslate lines that are different but each correct;
+- "normalise" legitimate variation (a character who is formal to a boss but casual to a friend; a relationship that really changes in the story; a deliberate pun);
+- touch a line you are unsure about — when in doubt, leave it.
+For every fix change as little as possible, keep tags and line breaks, and keep the length close to the original line.
+
+{{TGT_GUIDE}}
+
+=== CONTEXT PACK ===
+{{CONTEXT}}`
+  },
+  tighten: {
+    title: 'Rút gọn dòng dài', stage: '⑥ Rút gọn',
+    desc: 'Chỉ áp dụng cho dòng bị cờ "đọc quá nhanh / dòng quá dài / quá 2 dòng": viết ngắn lại mà không đổi nghĩa.',
+    vars: ['SRC', 'TGT', 'NOTE_LANG', 'MAX_CHARS', 'MAX_CPS', 'TGT_GUIDE', 'CONTEXT'], required: [],
+    contract: () => `OUTPUT FORMAT (fixed): a JSON array with exactly one object per line: {"id": <same id>, "t": "<shortened text>"}; optional "n": a very short note in {{NOTE_LANG}}.`,
+    body: `You are a subtitle fitter for translations from {{SRC}} into {{TGT}}. The translations below are correct but too long to be read in the time the subtitle stays on screen, or have lines that are too wide. Rewrite each one SHORTER so that it fits, without changing what it says.
+
+METHOD, in this order
+1. Remove redundancy, fillers, repeated words and anything the viewer can infer from the picture or the previous line.
+2. Replace long words and phrases with shorter natural equivalents; use contractions and spoken forms.
+3. Restructure the sentence more compactly (merge clauses, prefer verbs to noun phrases, drop pronouns where {{TGT}} allows).
+4. Only if it is still too long, drop the least important detail.
+
+RULES
+- Respect "max_total_chars" (all visible characters of the subtitle, tags and line breaks excluded) and "max_chars_per_line"; at most 2 lines, separated with "\\n" and broken at a natural phrase boundary.
+- Preserve meaning, emotion, register, forms of address (pronouns / honorifics), glossary terms, negations, numbers and names; keep tags such as <i>, and the dash for two speakers.
+- "prev_translation" / "next_translation" are given only so the line still flows with its neighbours; never merge with them.
+- If a line truly cannot be shortened without losing essential meaning, return the current text unchanged.
+
+{{TGT_GUIDE}}
+
+=== CONTEXT PACK ===
+{{CONTEXT}}`
+  },
+  tgtguide: {
+    title: 'Hướng dẫn ngôn ngữ đích', stage: 'Chèn vào prompt qua {{TGT_GUIDE}}',
+    desc: 'Quy tắc riêng của ngôn ngữ đích (đại từ, kính ngữ, tiểu từ, lỗi dịch máy thường gặp). Mặc định tự đổi theo ngôn ngữ đích bạn chọn; chỉnh ở đây sẽ áp dụng cho MỌI ngôn ngữ cho tới khi khôi phục mặc định.',
+    vars: ['TGT', 'SRC'], required: [], contract: () => '',
+    body: () => defaultTgtGuide()
+  }
+};
+
+const defaultBody = k => typeof PROMPTS[k].body === 'function' ? PROMPTS[k].body() : PROMPTS[k].body;
+const promptBody = k => { const o = cfg.prompts && cfg.prompts[k]; return (typeof o === 'string' && o.trim()) ? o : defaultBody(k); };
+const promptModified = k => { const o = cfg.prompts && cfg.prompts[k]; return typeof o === 'string' && o.trim() !== '' && o !== defaultBody(k); };
+function promptVars(extra) {
+  return { SRC: langDesc(), TGT: cfg.tgt, NOTE_LANG: cfg.noteLang || 'Vietnamese', MAX_CHARS: cfg.maxChars, MAX_CPS: cfg.maxCps, TODAY: new Date().toISOString().slice(0, 10), ...(extra || {}) };
+}
+// Một lượt thay thế duy nhất: nội dung chèn vào (ngữ cảnh phim, hướng dẫn) không bị quét lại.
+function fillPrompt(tpl, vars, depth = 0) {
+  return String(tpl).replace(/\{\{(\w+)\}\}/g, (m, k) => {
+    if (k === 'TGT_GUIDE') return depth >= 2 ? '' : fillPrompt(promptBody('tgtguide'), vars, depth + 1);
+    if (k === 'CONTEXT') return contextPack(vars.FILTER || '');
+    return k in vars ? String(vars[k]) : m;
+  });
+}
+function renderSystem(key, extra) {
+  const def = PROMPTS[key], vars = promptVars(extra);
+  let out = fillPrompt(promptBody(key), vars);
+  const c = extra && extra.contract != null ? extra.contract : (def.contract ? def.contract() : '');
+  if (c) out += '\n\n' + fillPrompt(c, vars);
+  return out;
+}
+const sysTranslate = (filterText, contract) => renderSystem('translate', { FILTER: filterText || '', contract });
+const sysEdit = filterText => renderSystem('edit', { FILTER: filterText || '' });
+
+const jl = a => a.map(x => JSON.stringify(x)).join('\n');
+const spkOf = r => ({ ...(r.spk ? { speaker: r.spk } : {}), ...(r.to ? { to: r.to } : {}) });
+// mode: false → chỉ bản gốc | true → gốc + dịch | 'auto' → bản gốc, kèm bản dịch nếu đã có
+function ctxLines(a, b, mode) {
+  const out = [];
+  for (let k = Math.max(0, a); k <= Math.min(S.rows.length - 1, b); k++) {
+    const r = S.rows[k];
+    const o = mode === true ? { id: k + 1, src: r.text, tr: r.t || '' } : { id: k + 1, text: r.text };
+    if (mode === 'auto' && r.t) o.translation = r.t;
+    out.push({ ...o, ...spkOf(r) });
+  }
+  return out;
+}
+function buildPrompt(kind, list) {
+  const first = list[0], last = list[list.length - 1];
+  const nb = kind === 'tr' ? 6 : 4, na = kind === 'tr' ? 5 : 3;
+  const filt = list.map(i => S.rows[i].text).join(' ');
+  if (kind === 'tr') {
+    const before = ctxLines(first - nb, first - 1, 'auto'), after = ctxLines(last + 1, last + na, 'auto');
+    const parts = [];
+    if (before.length) parts.push('PREVIOUS LINES (context only — do NOT translate; "translation" = already chosen, stay consistent with it):\n' + jl(before));
+    parts.push('LINES TO TRANSLATE:\n' + jl(list.map(i => ({ id: i + 1, text: S.rows[i].text, ...spkOf(S.rows[i]) }))));
+    if (after.length) parts.push('NEXT LINES (context only — do NOT translate; "translation" = already chosen, stay consistent with it):\n' + jl(after));
+    parts.push('Return a JSON array with exactly one {"id","t"} object for each line in LINES TO TRANSLATE (' + list.length + ' objects).');
+    return { system: sysTranslate(filt), user: parts.join('\n\n') };
+  }
+  const before = ctxLines(first - nb, first - 1, true), after = ctxLines(last + 1, last + na, true);
+  const parts = [];
+  if (before.length) parts.push('PREVIOUS LINES (context only, do NOT output):\n' + jl(before));
+  parts.push('LINES TO REVIEW (source + first draft):\n' + jl(list.map(i => ({ id: i + 1, src: S.rows[i].text, draft: S.rows[i].t, ...spkOf(S.rows[i]) }))));
+  if (after.length) parts.push('NEXT LINES (context only, do NOT output):\n' + jl(after));
+  parts.push('Return a JSON array with exactly one {"id","t"} object (plus optional "n","c") for each line in LINES TO REVIEW (' + list.length + ' objects).');
+  return { system: sysEdit(filt), user: parts.join('\n\n') };
+}
+
+/* =====================================================================
+   ÁP DỤNG KẾT QUẢ AI + HIỂN THỊ DÒNG
+   ===================================================================== */
+const rowEls = [];
+const dirty = new Set();
+let rafPending = false;
+const needJsSize = !(window.CSS && CSS.supports && CSS.supports('field-sizing', 'content'));
+let doneCounter = 0, totalCounter = 0, stageLabel = '';
+
+function markDirty(i) { dirty.add(i); if (!rafPending) { rafPending = true; requestAnimationFrame(flushDirty); } }
+function flushDirty() { rafPending = false; for (const i of dirty) updateRow(i, true); dirty.clear(); updateStats(); }
+function applyAI(kind, i, text, note, check) {
+  const r = S.rows[i]; if (!r) return;
+  if (r.locked) { progTick(i); return; }
+  text = String(text).replace(/\r/g, '').trim();
+  if (kind === 'tr') { r.d1 = text; r.t = text; r.ai0 = text; r.note = note || ''; r.aiCheck = !!check; r.approved = false; r.failed = false; r.tight = false; r.audit = false; }
+  else { if (r.edited) { progTick(i); return; } r.d2 = text; r.t = text; r.ai0 = text; r.note = note || ''; r.aiCheck = !!check; r.approved = false; }
+  r.flags = qaFlags(r, cfg, S.ctx.glossary);
+  markDirty(i); progTick(i); saveSoon();
+  $('#ticker').replaceChildren(h('b', {}, '#' + (i + 1) + ' '), r.text.replace(/\n/g, ' ⏎ ') + '  →  ' + text.replace(/\n/g, ' ⏎ '));
+  if ($('#follow').checked && rowEls[i]) rowEls[i].scrollIntoView({ block: 'center' });
+}
+function updateRow(i, flash) {
+  const r = S.rows[i], el = rowEls[i]; if (!el) return;
+  const ta = el._ta;
+  if (document.activeElement !== ta && ta.value !== r.t) ta.value = r.t;
+  if (needJsSize) { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; }
+  const fl = r.flags || [];
+  el.classList.toggle('approved', !!r.approved);
+  el.classList.toggle('locked', !!r.locked);
+  el.classList.toggle('flagged', fl.length > 0 && !r.approved);
+  el.classList.toggle('failed', !!r.failed);
+  const chips = fl.slice(0, 4).map(f => h('span', { class: 'chip ' + (f.k === 'empty' ? 'bad' : 'warn'), title: f.m, text: f.m.length > 46 ? f.m.slice(0, 44) + '…' : f.m }));
+  if (r.d2 && r.d1 && r.d2 !== r.d1) chips.push(h('span', { class: 'chip info', title: 'AI đã sửa bản nháp ở lượt biên tập', text: '✎ đã biên tập' }));
+  if (r.tight) chips.push(h('span', { class: 'chip info', title: 'AI đã rút gọn để kịp tốc độ đọc', text: '✂ đã rút gọn' }));
+  if (r.audit) chips.push(h('span', { class: 'chip info', title: 'AI đã sửa để nhất quán với toàn phim', text: '🔗 đã đồng bộ' }));
+  if (r.edited) chips.push(h('span', { class: 'chip ok', text: 'tôi đã sửa' }));
+  if (r.failed) chips.push(h('span', { class: 'chip bad', text: 'dịch lỗi' }));
+  el._flags.replaceChildren(...chips);
+  el._note.textContent = r.note ? '💬 ' + r.note : '';
+  el._spk.textContent = r.spk ? r.spk + (r.to ? ' → ' + r.to : '') : '';
+  el._spk.title = r.spk ? 'Người nói → người nghe' + (r.spkSrc === 'user' ? ' (bạn đặt)' : ' (AI suy luận, có thể sai)') : '';
+  const dur = Math.max(0.3, (r.end - r.start) / 1000), len = stripTags(r.t || '').replace(/\n/g, '').length;
+  el._cps.textContent = r.t ? (len / dur).toFixed(1) + ' c/s' : '';
+  el._ok.classList.toggle('on', !!r.approved);
+  el._lk.classList.toggle('on', !!r.locked);
+  applyVisibility(i);
+  if (flash) { el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }
+}
+function buildRow(r) {
+  const ta = h('textarea', { class: 'c-ta', rows: 1, spellcheck: false });
+  ta.value = r.t || ''; ta.spellcheck = false;
+  const spk = h('span', { class: 'spk' }), cps = h('span', { class: 'cps' }), flags = h('div', { class: 'flags' }), note = h('div', { class: 'note' });
+  const ok = h('button', { class: 'ib', title: 'Đánh dấu đã duyệt', dataset: { act: 'ok' }, text: '✓' });
+  const lk = h('button', { class: 'ib lk', title: 'Khóa dòng (không bị dịch lại ghi đè)', dataset: { act: 'lock' }, text: '🔒' });
+  const mo = h('button', { class: 'ib', title: 'Dịch lại / phương án khác / so sánh', dataset: { act: 'more' }, text: '⋯' });
+  const panel = h('div', { class: 'panel', hidden: true });
+  const el = h('div', { class: 'row', dataset: { i: r.i } },
+    h('div', { class: 'c-meta' }, h('div', { class: 'mh' }, h('b', {}, String(r.i + 1)), h('span', {}, fmtTime(r.start).slice(0, 8))), cps, spk),
+    h('div', { class: 'c-src', text: r.text }),
+    h('div', { class: 'c-tr' }, ta, flags, note),
+    h('div', { class: 'c-act' }, ok, lk, mo), panel);
+  Object.assign(el, { _ta: ta, _spk: spk, _cps: cps, _flags: flags, _note: note, _ok: ok, _lk: lk, _panel: panel });
+  return el;
+}
+let renderToken = 0;
+function renderAll() {
+  const list = $('#list'); const tok = ++renderToken;
+  rowEls.length = 0;
+  if (!S.rows.length) { list.replaceChildren(h('div', { class: 'empty' }, h('h2', {}, 'Bắt đầu bằng một file phụ đề'), 'Dán API key, kéo file .srt vào ô "File & ngôn ngữ" rồi bấm Dịch tự động.')); return; }
+  list.replaceChildren();
+  let k = 0;
+  const step = () => {
+    if (tok !== renderToken) return;
+    const frag = document.createDocumentFragment();
+    for (let n = 0; n < 150 && k < S.rows.length; n++, k++) { const el = buildRow(S.rows[k]); rowEls[k] = el; frag.append(el); }
+    list.append(frag);
+    for (let j = Math.max(0, k - 150); j < k; j++) updateRow(j, false);
+    if (k < S.rows.length) requestAnimationFrame(step); else updateStats();
+  };
+  step();
+}
+function passes(r) {
+  const f = $('#fltSel').value, q = $('#fltQ').value.trim().toLowerCase();
+  if (q && !(r.text.toLowerCase().includes(q) || (r.t || '').toLowerCase().includes(q))) return false;
+  switch (f) {
+    case 'flag': return (r.flags || []).length > 0;
+    case 'todo': return !r.approved;
+    case 'edited': return r.edited;
+    case 'aiedit': return !!(r.d1 && r.d2 && r.d1 !== r.d2) || !!r.tight || !!r.audit;
+    case 'locked': return r.locked;
+    case 'empty': return !r.t.trim();
+    default: return true;
+  }
+}
+function applyVisibility(i) { const el = rowEls[i]; if (el && document.activeElement !== el._ta) el.hidden = !passes(S.rows[i]); }
+function applyFilter() { S.rows.forEach((r, i) => { if (rowEls[i]) rowEls[i].hidden = !passes(r); }); }
+function updateStats() {
+  const n = S.rows.length; if (!n) { $('#stats').textContent = ''; return; }
+  let tr = 0, fl = 0, ap = 0, ed = 0;
+  for (const r of S.rows) { if (r.t.trim()) tr++; if ((r.flags || []).length && !r.approved) fl++; if (r.approved) ap++; if (r.edited) ed++; }
+  const tile = (v, l, c) => '<div class="st ' + (c || '') + '"><b>' + v + '</b><span>' + l + '</span></div>';
+  $('#stats').innerHTML = tile(tr + '/' + n, 'đã dịch') + tile(fl, 'cảnh báo', fl ? 'warn' : '') + tile(ap, 'đã duyệt') + tile(ed, 'tôi sửa');
+}
+function qaAll(silent) {
+  for (const r of S.rows) r.flags = r.t.trim() ? qaFlags(r, cfg, S.ctx.glossary) : [];
+  if (!silent) { S.rows.forEach((_, i) => updateRow(i, false)); updateStats(); }
+}
+
+/* ---- Thao tác trên dòng ---- */
+function pushUndo(changes) { if (!changes.length) return; undoStack.push(changes); redoStack.length = 0; if (undoStack.length > 300) undoStack.shift(); }
+function applyChanges(changes, dir) {
+  for (const c of changes) { const r = S.rows[c.i]; r.t = dir === 'undo' ? c.prev : c.next; r.flags = r.t.trim() ? qaFlags(r, cfg, S.ctx.glossary) : []; updateRow(c.i, true); }
+  updateStats(); saveSoon();
+}
+function undo() { const c = undoStack.pop(); if (!c) return; applyChanges(c, 'undo'); redoStack.push(c); }
+function redo() { const c = redoStack.pop(); if (!c) return; applyChanges(c, 'redo'); undoStack.push(c); }
+
+const list = $('#list');
+list.addEventListener('focusin', e => { const ta = e.target.closest('.c-ta'); if (!ta) return; const i = +ta.closest('.row').dataset.i; ta._prev = S.rows[i].t; });
+list.addEventListener('input', e => {
+  const ta = e.target.closest('.c-ta'); if (!ta) return;
+  const el = ta.closest('.row'), i = +el.dataset.i, r = S.rows[i];
+  r.t = ta.value; r.edited = r.t !== r.ai0; r.approved = false;
+  if (needJsSize) { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; }
+  clearTimeout(el._qt); el._qt = setTimeout(() => { r.flags = r.t.trim() ? qaFlags(r, cfg, S.ctx.glossary) : []; updateRow(i, false); updateStats(); }, 350);
+  saveSoon();
+});
+list.addEventListener('change', e => {
+  const ta = e.target.closest('.c-ta'); if (!ta) return;
+  const i = +ta.closest('.row').dataset.i, r = S.rows[i];
+  if (ta._prev !== undefined && ta._prev !== r.t) pushUndo([{ i, prev: ta._prev, next: r.t }]);
+  ta._prev = r.t; updateRow(i, false); saveSoon();
+});
+list.addEventListener('keydown', e => {
+  const ta = e.target.closest('.c-ta'); if (!ta) return;
+  const el = ta.closest('.row'), i = +el.dataset.i;
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault(); S.rows[i].approved = true; ta.dispatchEvent(new Event('change', { bubbles: true })); updateRow(i, false);
+    let n = el.nextElementSibling; while (n && (n.hidden || !n._ta)) n = n.nextElementSibling;
+    if (n) { n._ta.focus(); n.scrollIntoView({ block: 'center' }); }
+  } else if (e.key === 'Escape') ta.blur();
+});
+list.addEventListener('click', e => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const el = b.closest('.row'), i = +el.dataset.i, r = S.rows[i];
+  if (b.dataset.act === 'ok') { r.approved = !r.approved; updateRow(i, false); updateStats(); saveSoon(); }
+  else if (b.dataset.act === 'lock') { r.locked = !r.locked; updateRow(i, false); saveSoon(); }
+  else if (b.dataset.act === 'more') { const p = el._panel; if (p.hidden) { buildPanel(i); p.hidden = false; } else p.hidden = true; }
+});
+function buildPanel(i) {
+  const el = rowEls[i], p = el._panel, r = S.rows[i];
+  const inst = h('input', { type: 'text', placeholder: 'Yêu cầu riêng, vd: ngắn gọn hơn / thân mật hơn / giữ nguyên tên…' });
+  const out = h('div', { class: 'p-out' });
+  const bRe = h('button', { class: 'btn sm', text: '⟳ Dịch lại' });
+  const bAlt = h('button', { class: 'btn sm', text: '✦ 3 phương án' });
+  const bDf = h('button', { class: 'btn sm', text: '⇄ So với bản nháp' });
+  const bAi = h('button', { class: 'btn sm', text: '↶ Về bản AI' });
+  const setBusy = v => [bRe, bAlt].forEach(b => b.disabled = v);
+  const spk = h('input', { type: 'text', placeholder: 'Người nói', title: 'Để trống = AI tự suy luận' }), to = h('input', { type: 'text', placeholder: 'Nói với' });
+  spk.setAttribute('list', 'charList'); to.setAttribute('list', 'charList'); spk.value = r.spk || ''; to.value = r.to || '';
+  const onSp = () => { r.spk = spk.value.trim(); r.to = to.value.trim(); r.spkSrc = 'user'; updateRow(i, false); saveSoon(); };
+  spk.addEventListener('change', onSp); to.addEventListener('change', onSp);
+  bRe.onclick = async () => {
+    setBusy(true); out.textContent = 'Đang dịch lại…';
+    try { const t = await rewriteLine(i, inst.value.trim()); setLine(i, t, true); out.textContent = 'Đã cập nhật.'; }
+    catch (e) { out.textContent = 'Lỗi: ' + e.message; } setBusy(false);
+  };
+  bAlt.onclick = async () => {
+    setBusy(true); out.textContent = 'Đang tạo phương án…';
+    try {
+      const alts = await altLines(i, inst.value.trim()); out.replaceChildren();
+      alts.forEach(a => out.append(h('div', { class: 'alt' }, h('span', { text: a.t }), h('em', { text: a.tone || '' }), h('button', { class: 'btn sm', text: 'Dùng', onclick: () => { setLine(i, a.t, false); } }))));
+    } catch (e) { out.textContent = 'Lỗi: ' + e.message; } setBusy(false);
+  };
+  bDf.onclick = () => { const base = r.d1 || r.text; out.replaceChildren(h('div', { class: 'diff' })); out.firstChild.innerHTML = diffWords(base, r.t || ''); if (!r.d1) out.prepend(h('div', { class: 'hint', text: 'Chưa có bản nháp AI, đang so với bản gốc.' })); };
+  bAi.onclick = () => { if (r.ai0 != null && r.ai0 !== '' ) { setLine(i, r.ai0, false); r.edited = false; updateRow(i, false); } };
+  p.replaceChildren(h('div', { class: 'p-line' }, inst, bRe, bAlt), h('div', { class: 'p-line' }, h('span', { class: 'hint', text: 'Người nói → nói với (dùng cho lần dịch lại):' }), spk, to), h('div', { class: 'p-line' }, bDf, bAi), out);
+  if (r.note) out.textContent = '💬 ' + r.note;
+}
+function setLine(i, text, isAI) {
+  const r = S.rows[i]; pushUndo([{ i, prev: r.t, next: text }]);
+  r.t = text; if (isAI) { r.ai0 = text; r.edited = false; } else r.edited = text !== r.ai0;
+  r.approved = false; r.flags = qaFlags(r, cfg, S.ctx.glossary); updateRow(i, true); updateStats(); saveSoon();
+}
+async function rewriteLine(i, instruction) {
+  const r = S.rows[i];
+  const user = ['PREVIOUS LINES:\n' + jl(ctxLines(i - 6, i - 1, true)), 'LINE TO RE-TRANSLATE:\n' + jl([{ id: i + 1, src: r.text, current_translation: r.t, ...spkOf(r) }]), 'NEXT LINES:\n' + jl(ctxLines(i + 1, i + 4, true)),
+    instruction ? 'EDITOR INSTRUCTION (follow it): ' + instruction : 'The editor is unhappy with the current translation. Produce a clearly better one.',
+    'Return a JSON array with a single {"id","t"} object.'].join('\n\n');
+  const acc = await gemini({ model: cfg.modelEd || cfg.modelTr, system: sysTranslate(r.text), user, schema: SCH_TR, stream: false });
+  const o = flattenObjs([].concat(JSON.parse(acc.text)))[0];
+  if (!o || !o.t) throw new Error('Không nhận được bản dịch.');
+  return String(o.t).trim();
+}
+async function altLines(i, instruction) {
+  const r = S.rows[i];
+  const user = ['PREVIOUS LINES:\n' + jl(ctxLines(i - 6, i - 1, true)), 'LINE:\n' + jl([{ id: i + 1, src: r.text, current_translation: r.t, ...spkOf(r) }]), 'NEXT LINES:\n' + jl(ctxLines(i + 1, i + 4, true)),
+    (instruction ? 'EDITOR INSTRUCTION: ' + instruction + '\n' : '') + 'Give exactly 3 alternative translations of the LINE that differ meaningfully from each other and from the current one (e.g. more literal / more natural / more concise, or different register). For each add "tone": a 2-5 word description in ' + (cfg.noteLang || 'Vietnamese') + '. Return a JSON array of {"t","tone"}.'].join('\n\n');
+  const acc = await gemini({ model: cfg.modelEd || cfg.modelTr, system: sysTranslate(r.text, 'OUTPUT FORMAT (fixed): a JSON array of {"t","tone"} objects exactly as requested in the user message.'), user, schema: SCH_ALT, stream: false });
+  const arr = JSON.parse(acc.text); return (Array.isArray(arr) ? arr : []).filter(a => a && a.t).slice(0, 3);
+}
+
+/* =====================================================================
+   QUY TRÌNH: NGỮ CẢNH → DỊCH → BIÊN TẬP → KIỂM TRA
+   ===================================================================== */
+function renderSteps() { for (const li of $$('#steps li')) li.className = S.stage[li.dataset.s] === 'idle' ? '' : S.stage[li.dataset.s]; }
+function setStage(k, v) { S.stage[k] = v; renderSteps(); }
+function setProg(label, done, total) { stageLabel = label; doneCounter = done; totalCounter = total; drawProg(); }
+function progTick() { doneCounter++; drawProg(); }
+function drawProg() {
+  const pct = totalCounter ? Math.min(100, Math.round(doneCounter / totalCounter * 100)) : 0;
+  $('#barFill').style.width = pct + '%';
+  $('#pLabel').textContent = (stageLabel || 'Sẵn sàng') + (totalCounter ? ' — ' + Math.min(doneCounter, totalCounter) + '/' + totalCounter + ' dòng (' + pct + '%)' : '');
+  $('#pStats').textContent = pool.alive().length + '/' + pool.keys.length + ' key hoạt động';
+}
+function makeBatches(idxs, size = cfg.batch, maxChars = BATCH_CHARS) {
+  const out = []; let cur = [], chars = 0;
+  for (const i of idxs) {
+    const len = S.rows[i].text.length + 30;
+    if (cur.length && (i !== cur[cur.length - 1] + 1 || cur.length >= size || chars + len > maxChars)) { out.push(cur); cur = []; chars = 0; }
+    cur.push(i); chars += len;
+  }
+  if (cur.length) out.push(cur);
+  return out;
+}
+async function runPool(tasks, worker) {
+  const n = Math.max(1, Math.min(tasks.length, cfg.parallel > 0 ? cfg.parallel : Math.max(1, pool.alive().length)));
+  let k = 0, fatal = null;
+  await Promise.all(Array.from({ length: n }, async () => {
+    while (!fatal && !RUN.signal.aborted) {
+      const t = tasks[k++]; if (!t) return;
+      try { await worker(t); }
+      catch (e) { if (isAbort(e)) return; if (e instanceof FatalError) { fatal = e; return; } log('Lô lỗi: ' + e.message, 'err'); }
+    }
+  }));
+  if (RUN.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+  if (fatal) throw fatal;
+}
+async function processBatch(kind, idxs, depth = 0) {
+  const need = new Set(idxs);
+  let rounds = 0;
+  while (need.size && rounds < 2) {
+    rounds++;
+    const list = [...need].sort((a, b) => a - b);
+    const { system, user } = buildPrompt(kind, list);
+    let st = new ObjStream();
+    try {
+      await gemini({
+        model: kind === 'tr' ? cfg.modelTr : (cfg.modelEd || cfg.modelTr), system, user, schema: kind === 'tr' ? SCH_TR : SCH_ED, signal: RUN.signal,
+        onAttempt: () => { st = new ObjStream(); },
+        onText: txt => {
+          for (const o of flattenObjs(st.feed(txt))) {
+            const i = Number(o.id) - 1;
+            if (need.has(i) && typeof o.t === 'string' && o.t.trim()) { need.delete(i); applyAI(kind, i, o.t, o.n, o.c); }
+          }
+        }
+      });
+    } catch (e) {
+      if (isAbort(e) || e instanceof FatalError) throw e;
+      log('Lô ' + (list[0] + 1) + '–' + (list[list.length - 1] + 1) + ' lỗi (' + e.message + ')', 'warn');
+    }
+    if (need.size) log('Lô ' + (list[0] + 1) + '–' + (list[list.length - 1] + 1) + ': thiếu ' + need.size + ' dòng, thử lại phần còn thiếu…', 'warn');
+  }
+  if (!need.size) return;
+  const rest = [...need].sort((a, b) => a - b);
+  if (rest.length > 1 && depth < 4) {
+    const mid = Math.ceil(rest.length / 2);
+    await processBatch(kind, rest.slice(0, mid), depth + 1);
+    await processBatch(kind, rest.slice(mid), depth + 1);
+  } else {
+    for (const i of rest) {
+      if (kind === 'tr') { S.rows[i].failed = true; S.rows[i].flags = [{ k: 'fail', m: 'Không dịch được dòng này' }]; markDirty(i); }
+      log('Không xử lý được dòng #' + (i + 1) + ' (có thể bị bộ lọc an toàn chặn).', 'err');
+      progTick();
+    }
+  }
+}
+let lastEdges = new Set();
+async function stageTranslate() {
+  const todo = S.rows.filter(r => !r.locked && !r.d1 && !r.edited && stripTags(r.text).trim()).map(r => r.i);
+  if (!todo.length) { log('Không còn dòng nào cần dịch ở lượt 1.', 'ok'); setStage('tr', 'done'); return; }
+  setStage('tr', 'run'); setProg('③ Đang dịch (lượt 1)', 0, todo.length);
+  const batches = makeBatches(todo);
+  lastEdges = new Set(); batches.forEach(b => { lastEdges.add(b[0]); lastEdges.add(b[b.length - 1]); });
+  // Đợt A (lô chẵn) dịch trước; đợt B (lô lẻ) thấy bản dịch của lô liền trước và liền sau từ đợt A → xưng hô liền mạch ở chỗ nối, không tốn thêm lượt gọi.
+  const waveA = batches.filter((_, k) => k % 2 === 0), waveB = batches.filter((_, k) => k % 2 === 1);
+  log('Lượt 1: ' + todo.length + ' dòng, ' + batches.length + ' lô, ' + Math.min(batches.length, cfg.parallel > 0 ? cfg.parallel : pool.alive().length) + ' luồng song song.');
+  if (waveB.length) log('Dịch 2 đợt: đợt B nhìn thấy bản dịch của lô liền kề (đợt A) để giữ xưng hô liền mạch.');
+  try {
+    await runPool(waveA, b => processBatch('tr', b));
+    if (waveB.length) await runPool(waveB, b => processBatch('tr', b));
+    setStage('tr', 'done'); log('Hoàn tất lượt dịch 1.', 'ok');
+  }
+  catch (e) { setStage('tr', isAbort(e) ? 'idle' : 'err'); throw e; }
+}
+async function stageEdit() {
+  let todo = S.rows.filter(r => !r.locked && !r.edited && r.d1 && !r.d2 && r.t.trim()).map(r => r.i);
+  if (cfg.edMode === 'smart' && todo.length) {
+    const sm = smartEditSet(); const all = todo.length;
+    todo = todo.filter(i => sm.has(i));
+    log('Biên tập thông minh: chọn ' + todo.length + '/' + all + ' dòng (dòng có cờ + vùng quanh, biên các lô, mẫu 1/3).');
+  }
+  if (!todo.length) { log('Không có dòng nào cần biên tập.', 'ok'); setStage('ed', 'done'); return; }
+  setStage('ed', 'run'); setProg('④ Đang biên tập (lượt 2)', 0, todo.length);
+  const batches = makeBatches(todo);
+  log('Lượt 2 (biên tập): ' + todo.length + ' dòng, ' + batches.length + ' lô.');
+  try { await runPool(batches, b => processBatch('ed', b)); setStage('ed', 'done'); log('Hoàn tất biên tập.', 'ok'); }
+  catch (e) { setStage('ed', isAbort(e) ? 'idle' : 'err'); throw e; }
+}
+function smartEditSet() {
+  const n = S.rows.length, sel = new Set();
+  const add = (i, w) => { for (let k = Math.max(0, i - w); k <= Math.min(n - 1, i + w); k++) sel.add(k); };
+  for (const r of S.rows) if (r.d1 && !r.locked && !r.edited && ((r.flags || []).length || r.aiCheck || r.note || r.failed)) add(r.i, 2);
+  for (const e of lastEdges) add(e, 3);
+  for (let b = 0; b * 10 < n; b++) if (b % 3 === 1) for (let k = b * 10; k < Math.min(n, b * 10 + 10); k++) sel.add(k);
+  return sel;
+}
+
+/* ---- ② Gán người nói / người nghe ---- */
+const SCH_SP = { type: 'ARRAY', items: { type: 'OBJECT', properties: { id: { type: 'INTEGER' }, s: T(), to: T() }, required: ['id'], propertyOrdering: ['id', 's', 'to'] } };
+function sysSpeakers() { return renderSystem('speakers'); }
+async function processSpeakers(idxs) {
+  const first = idxs[0], last = idxs[idxs.length - 1];
+  const prev = ctxLines(first - 10, first - 1, false), next = ctxLines(last + 1, last + 6, false);
+  const user = [prev.length ? 'PREVIOUS LINES (context only; "speaker"/"to" shown when already known):\n' + jl(prev) : '',
+    'LINES TO LABEL:\n' + jl(idxs.map(i => ({ id: i + 1, text: S.rows[i].text }))),
+    next.length ? 'NEXT LINES (context only):\n' + jl(next) : '',
+    'Return a JSON array with exactly one {"id","s","to"} object for each line in LINES TO LABEL (' + idxs.length + ' objects).'].filter(Boolean).join('\n\n');
+  const acc = await gemini({ model: cfg.modelEd || cfg.modelTr, system: sysSpeakers(), user, schema: SCH_SP, stream: false, temp: 0.1, signal: RUN.signal });
+  let arr = []; try { arr = flattenObjs([].concat(JSON.parse(acc.text))); } catch (_) {}
+  const clean = v => { v = String(v == null ? '' : v).trim(); return /^(\?|-|none|unknown|n\/a)$/i.test(v) ? '' : v; };
+  const got = new Map(arr.map(o => [Number(o.id) - 1, o]));
+  for (const i of idxs) {
+    const r = S.rows[i], o = got.get(i);
+    if (r.spkSrc !== 'user') { r.spk = o ? clean(o.s) : ''; r.to = o ? clean(o.to) : ''; r.spkSrc = 'ai'; }
+    markDirty(i); progTick(i);
+  }
+  saveSoon();
+}
+async function stageSpeakers() {
+  if (!S.ctx.characters.length) { log('Bỏ qua gán người nói: ngữ cảnh chưa có danh sách nhân vật.', 'warn'); return; }
+  const todo = S.rows.filter(r => !r.spkSrc && stripTags(r.text).trim()).map(r => r.i);
+  if (!todo.length) { setStage('sp', 'done'); return; }
+  setStage('sp', 'run'); setProg('② Đang gán người nói / người nghe', 0, todo.length);
+  const batches = makeBatches(todo, 120, 9000);
+  log('Gán người nói: ' + todo.length + ' dòng, ' + batches.length + ' lô lớn (đọc nhiều thoại hơn lô dịch để suy luận chính xác hơn).');
+  try { await runPool(batches, b => processSpeakers(b)); setStage('sp', 'done'); log('Hoàn tất gán người nói.', 'ok'); }
+  catch (e) { setStage('sp', isAbort(e) ? 'idle' : 'err'); throw e; }
+}
+
+/* ---- Áp dụng sửa đổi tự động từ lượt nhất quán / rút gọn ---- */
+function applyFix(kind, i, text, note) {
+  const r = S.rows[i]; if (!r || r.locked || r.edited || r.approved) return false;
+  text = String(text || '').replace(/\r/g, '').trim();
+  if (!text || text === r.t) return false;
+  r.t = text; r.ai0 = text; r.approved = false;
+  if (kind === 'tg') r.tight = true; else r.audit = true;
+  if (note) r.note = note;
+  r.flags = qaFlags(r, cfg, S.ctx.glossary); markDirty(i); saveSoon();
+  return true;
+}
+
+/* ---- ⑤ Quét nhất quán toàn phim ---- */
+const SCH_AU = { type: 'OBJECT', properties: {
+  glossary_additions: { type: 'ARRAY', items: { type: 'OBJECT', properties: { src: T(), target: T(), note: T() }, required: ['src', 'target'] } },
+  fixes: { type: 'ARRAY', items: { type: 'OBJECT', properties: { id: { type: 'INTEGER' }, t: T(), n: T() }, required: ['id', 't'], propertyOrdering: ['id', 't', 'n'] } }
+}, required: ['fixes'] };
+function sysAudit() { return renderSystem('audit'); }
+async function stageAudit() {
+  const rows = S.rows.filter(r => r.t.trim());
+  if (rows.length < 8) { setStage('cn', 'done'); return; }
+  const lineStr = r => (r.spk ? '[' + r.spk + (r.to ? ' → ' + r.to : '') + '] ' : '') + r.text.replace(/\n/g, ' / ') + ' ⇒ ' + r.t.replace(/\n/g, ' / ');
+  const chunks = []; let cur = [], len = 0;
+  for (const r of rows) { const s = (r.i + 1) + ' | ' + lineStr(r); if (cur.length && len + s.length > 150000) { chunks.push(cur); cur = []; len = 0; } cur.push(s); len += s.length + 1; }
+  if (cur.length) chunks.push(cur);
+  setStage('cn', 'run'); setProg('⑤ Đang quét nhất quán toàn phim', 0, chunks.length);
+  log('Quét nhất quán: ' + rows.length + ' dòng trong ' + chunks.length + ' lượt (mỗi lượt đọc cả đoạn phim dài).');
+  const decisions = []; let fixed = 0, added = 0;
+  try {
+    for (let ci = 0; ci < chunks.length; ci++) {
+      const user = (decisions.length ? 'ESTABLISHED DECISIONS FROM THE EARLIER PART OF THE FILM (follow them):\n' + decisions.join('\n') + '\n\n' : '') +
+        'SCRIPT (id | [speaker → addressee] source ⇒ current translation):\n' + chunks[ci].join('\n') + '\n\nReturn the JSON object.';
+      let j = null;
+      try { const acc = await gemini({ model: cfg.modelEd || cfg.modelTr, system: sysAudit(), user, schema: SCH_AU, stream: false, temp: 0.1, signal: RUN.signal }); j = JSON.parse(acc.text); }
+      catch (e) { if (isAbort(e) || e instanceof FatalError) throw e; log('Lượt quét nhất quán ' + (ci + 1) + ' lỗi: ' + e.message.slice(0, 140), 'warn'); }
+      if (j) {
+        for (const g of (j.glossary_additions || [])) {
+          if (!g.src || !g.target) continue;
+          const seen = S.ctx.glossary.some(x => variants(x.src).some(v => variants(g.src).some(w => w.toLowerCase() === v.toLowerCase())));
+          if (!seen) { S.ctx.glossary.push({ src: g.src, target: g.target, note: g.note || 'từ quét nhất quán', auto: true }); added++; }
+          decisions.push('- ' + g.src + ' => ' + g.target);
+        }
+        const fx = Array.isArray(j.fixes) ? j.fixes : [], cap = Math.max(10, Math.floor(chunks[ci].length * 0.3));
+        if (fx.length > cap) log('Model đề xuất ' + fx.length + ' sửa đổi, chỉ áp dụng ' + cap + ' mục đầu (giới hạn an toàn 30%).', 'warn');
+        for (const f of fx.slice(0, cap)) {
+          const i = Number(f.id) - 1, r = S.rows[i]; if (!r || !r.t.trim() || typeof f.t !== 'string') continue;
+          const a = stripTags(r.t).length, b = stripTags(f.t).length;
+          if (a > 8 && (b < a * 0.4 || b > a * 2.5)) continue;
+          if (applyFix('au', i, f.t, f.n)) fixed++;
+        }
+      }
+      setProg('⑤ Đang quét nhất quán toàn phim', ci + 1, chunks.length);
+    }
+    setStage('cn', 'done'); renderCtxSummary(); saveSoon();
+    log('Quét nhất quán xong: sửa ' + fixed + ' dòng, thêm ' + added + ' thuật ngữ vào bộ ngữ cảnh.', 'ok');
+  } catch (e) { setStage('cn', isAbort(e) ? 'idle' : 'err'); throw e; }
+}
+
+/* ---- ⑥ Rút gọn dòng quá dài / đọc quá nhanh ---- */
+function sysTighten() { return renderSystem('tighten'); }
+async function processTighten(idxs) {
+  const items = idxs.map(i => {
+    const r = S.rows[i], dur = Math.max(0.3, (r.end - r.start) / 1000), pv = S.rows[i - 1], nx = S.rows[i + 1];
+    return { id: i + 1, src: r.text, current: r.t, seconds: +dur.toFixed(2), max_total_chars: Math.max(8, Math.floor(cfg.maxCps * dur)), max_chars_per_line: cfg.maxChars,
+      ...(pv && pv.t ? { prev_translation: pv.t } : {}), ...(nx && nx.t ? { next_translation: nx.t } : {}), ...spkOf(r) };
+  });
+  const acc = await gemini({ model: cfg.modelEd || cfg.modelTr, system: sysTighten(), user: 'LINES TO FIT:\n' + jl(items) + '\n\nReturn a JSON array with exactly one {"id","t"} object for each line (' + items.length + ' objects).', schema: SCH_TR, stream: false, temp: 0.2, signal: RUN.signal });
+  let arr = []; try { arr = flattenObjs([].concat(JSON.parse(acc.text))); } catch (_) {}
+  const got = new Map(arr.map(o => [Number(o.id) - 1, o]));
+  let n = 0;
+  for (const i of idxs) {
+    const o = got.get(i), r = S.rows[i];
+    if (o && typeof o.t === 'string' && stripTags(o.t).replace(/\s+/g, '').length < stripTags(r.t).replace(/\s+/g, '').length && applyFix('tg', i, o.t, o.n)) n++;
+    progTick(i);
+  }
+  return n;
+}
+async function stageTighten() {
+  qaAll(true);
+  const bad = ['long', 'wide', 'lines'];
+  const todo = S.rows.filter(r => !r.locked && !r.edited && !r.approved && !r.tight && r.t.trim() && (r.flags || []).some(f => bad.includes(f.k))).map(r => r.i);
+  if (!todo.length) { log('Không có dòng nào cần rút gọn.', 'ok'); setStage('tg', 'done'); return; }
+  setStage('tg', 'run'); setProg('⑥ Đang rút gọn dòng quá dài / đọc quá nhanh', 0, todo.length);
+  const groups = []; for (let k = 0; k < todo.length; k += 25) groups.push(todo.slice(k, k + 25));
+  log('Rút gọn: ' + todo.length + ' dòng vượt giới hạn tốc độ đọc / độ dài, ' + groups.length + ' lượt.');
+  let n = 0;
+  try { await runPool(groups, async g => { n += await processTighten(g); }); setStage('tg', 'done'); log('Rút gọn xong: ' + n + '/' + todo.length + ' dòng đã được rút ngắn.', n ? 'ok' : 'warn'); }
+  catch (e) { setStage('tg', isAbort(e) ? 'idle' : 'err'); throw e; }
+}
+
+function stageQA() {
+  setStage('qa', 'run'); qaAll(false);
+  const fl = S.rows.filter(r => (r.flags || []).length).length;
+  const kinds = {}; S.rows.forEach(r => (r.flags || []).forEach(f => kinds[f.k] = (kinds[f.k] || 0) + 1));
+  setStage('qa', 'done'); setProg('⑦ Hoàn tất kiểm tra', S.rows.length, S.rows.length);
+  log('Kiểm tra xong: ' + fl + ' dòng có cảnh báo ' + JSON.stringify(kinds), fl ? 'warn' : 'ok');
+  if (fl) toast(fl + ' dòng có cảnh báo — chọn lọc "Có cảnh báo" để xem nhanh.', 6000);
+}
+
+/* ---- Ngữ cảnh phim ---- */
+function subtitleDigest(maxChars) {
+  const lines = S.rows.map(r => (r.i + 1) + ': ' + r.text.replace(/\n/g, ' / '));
+  let all = lines.join('\n');
+  if (all.length <= maxChars) return all;
+  const per = Math.floor(maxChars / 12), seg = Math.ceil(lines.length / 12), parts = [];
+  for (let s = 0; s < 12; s++) { let t = '', k = s * seg; while (k < Math.min(lines.length, (s + 1) * seg) && t.length < per) t += lines[k++] + '\n'; parts.push(t); }
+  return parts.join('...\n');
+}
+function sampleBlocks(blocks, per) {
+  const n = S.rows.length, f = r => r.text.replace(/\n/g, ' / ');
+  if (n <= blocks * per) return S.rows.map(f).join('\n');
+  const step = (n - per) / (blocks - 1), out = [];
+  for (let b = 0; b < blocks; b++) { const st = Math.round(b * step); out.push(S.rows.slice(st, st + per).map(f).join('\n')); }
+  return out.join('\n[...]\n');
+}
+function pickQuotes(k, attempt) {
+  const cand = S.rows.map(r => stripTags(r.text).replace(/\s+/g, ' ').trim()).filter(t => t.length >= (/[぀-ヿ㐀-鿿가-힯]/.test(t) ? 8 : 28) && t.length <= 90 && /\p{L}{2,}/u.test(t) && !/[♪#]/.test(t));
+  if (!cand.length) return '(none)';
+  const step = cand.length / k, out = [];
+  for (let q = 0; q < k; q++) out.push('"' + cand[Math.min(cand.length - 1, Math.floor(q * step + (attempt ? step / 2 : 0)))] + '"');
+  return out.join('\n');
+}
+function needCtx() { return !(S.ctx.title || S.ctx.characters.length || S.ctx.glossary.length); }
+async function stageContext(attempt = 0) {
+  setStage('ctx', 'run'); setProg('① Đang xác định ngữ cảnh phim', 0, 0);
+  const model = cfg.modelCtx || cfg.modelTr;
+  const hintTxt = S.hint || guessTitle(S.fileName);
+  const sample = sampleBlocks(12, 8), quotes = pickQuotes(6, attempt);
+  const retryNote = attempt ? `\n\nIMPORTANT: a previous identification attempt had LOW confidence${S.ctx.title ? ' (it guessed "' + S.ctx.title + '")' : ''}. Do not trust that guess blindly: run DIFFERENT searches, using the exact dialogue quotes above.` : '';
+  let research = '', sources = [];
+  if (cfg.useSearch) {
+    log('Đang tìm thông tin phim bằng Google Search (grounding)…');
+    try {
+      const acc = await gemini({
+        model, tools: [{ google_search: {} }], stream: false, temp: 0.2, signal: RUN.signal,
+        system: renderSystem('research'),
+        user: `File name: ${S.fileName || '(unknown)'}
+Title hint from the user: ${hintTxt || '(none)'}
+Source language: ${langDesc()}
+Target language of the translation: ${cfg.tgt}
+
+Sample dialogue taken evenly across the whole file (12 blocks):
+${sample}
+
+Distinctive lines — use them as exact-phrase web searches (put each in quotation marks, optionally add words like "quote", "subtitles" or "script"):
+${quotes}${retryNote}
+
+Identify the exact film / series episode these subtitles come from and write the research brief.`
+      });
+      research = acc.text; sources = acc.sources || [];
+      if (acc.queries && acc.queries.length) log('Đã tìm: ' + [...new Set(acc.queries)].slice(0, 4).join(' · '));
+      log('Tìm kiếm xong (' + sources.length + ' nguồn).', 'ok');
+    } catch (e) {
+      if (isAbort(e)) throw e;
+      log('Không dùng được Google Search (' + e.message.slice(0, 160) + '). Chuyển sang kiến thức của model + nội dung phụ đề.', 'warn');
+    }
+  }
+  log('Đang tổng hợp bộ ngữ cảnh (nhân vật, xưng hô, thuật ngữ)…');
+  const nl = cfg.noteLang || 'Vietnamese';
+  const sys = renderSystem('ctxsynth');
+  const user = `File name: ${S.fileName || '(unknown)'}\nUser title hint: ${hintTxt || '(none)'}\n\n=== RESEARCH NOTES ===\n${research || '(none available)'}\n\n=== SUBTITLE TEXT (line number: text) ===\n${subtitleDigest(200000)}`;
+  let j = null, lastErr = null;
+  for (let a = 0; a < 2 && !j; a++) {
+    try { const acc = await gemini({ model, system: sys, user, schema: SCH_CTX, stream: false, temp: 0.2, signal: RUN.signal }); j = JSON.parse(acc.text); }
+    catch (e) { if (isAbort(e) || e instanceof FatalError) throw e; lastErr = e; log('Tổng hợp ngữ cảnh lỗi, thử lại: ' + e.message.slice(0, 120), 'warn'); }
+  }
+  if (!j) { setStage('ctx', 'err'); log('Không tạo được ngữ cảnh tự động: ' + (lastErr && lastErr.message) + '. Vẫn dịch tiếp mà không có ngữ cảnh.', 'err'); return; }
+  mergeCtx(j, sources);
+  setStage('ctx', 'done'); renderCtxSummary(); saveSoon();
+  log('Ngữ cảnh: "' + (S.ctx.title || 'không xác định') + '" · ' + S.ctx.characters.length + ' nhân vật · ' + S.ctx.relations.length + ' cặp xưng hô · ' + S.ctx.glossary.length + ' thuật ngữ · độ tin cậy ' + (S.ctx.confidence || '?'), 'ok');
+  if (attempt === 0 && cfg.useSearch && String(S.ctx.confidence).toLowerCase() === 'low') { log('Độ tin cậy nhận diện thấp → tự thử lại một lần với truy vấn khác…', 'warn'); return stageContext(1); }
+}
+function mergeCtx(j, sources) {
+  const c = S.ctx;
+  for (const k of ['title', 'year', 'kind', 'genre', 'setting', 'tone', 'synopsis']) c[k] = j[k] || c[k] || '';
+  c.style = j.style_guide || c.style || '';
+  c.confidence = j.confidence || '';
+  const keepC = c.characters.filter(x => x.user), keepG = c.glossary.filter(x => x.user);
+  const seenC = new Set(keepC.map(x => x.name.toLowerCase())), seenG = new Set(keepG.flatMap(x => variants(x.src).map(v => v.toLowerCase())));
+  const newC = (j.characters || []).filter(x => x.name && !seenC.has(x.name.toLowerCase())).map(x => ({ name: x.name, nameT: x.name_target || '', gender: x.gender || '', age: x.age || '', role: x.role || '', address: x.address || '' }));
+  const newG = (j.glossary || []).filter(x => x.src && x.target && !variants(x.src).some(v => seenG.has(v.toLowerCase()))).map(x => ({ src: x.src, target: x.target, note: x.note || '' }));
+  c.characters = [...keepC, ...newC]; c.glossary = [...keepG, ...newG];
+  const keepR = (c.relations || []).filter(x => x.user), rk = (a, b) => [a, b].map(v => String(v).toLowerCase()).sort().join('|');
+  const seenR = new Set(keepR.map(x => rk(x.a, x.b)));
+  const newR = (j.relations || []).filter(x => x.a && x.b && !seenR.has(rk(x.a, x.b))).map(x => ({ a: x.a, b: x.b, ab: x.a_to_b || '', ba: x.b_to_a || '', note: x.note || '' }));
+  c.relations = [...keepR, ...newR];
+  const seen = new Set(); c.sources = (sources || []).filter(s => !seen.has(s.uri) && seen.add(s.uri));
+}
+let ctxResolve = null;
+function waitCtxApproval() {
+  renderCtxDlg(); $('#ctxGo').hidden = false; $('#ctxCancel').hidden = false; $('#ctxDlg').showModal();
+  log('Đang chờ bạn duyệt ngữ cảnh…');
+  return new Promise((res, rej) => { ctxResolve = { res, rej }; });
+}
+function refreshCharList() {
+  const names = [...new Set(S.ctx.characters.flatMap(x => [x.name, x.nameT]).filter(Boolean))];
+  $('#charList').replaceChildren(...names.map(n => h('option', { value: n })));
+}
+function renderCtxSummary() {
+  const c = S.ctx; refreshCharList();
+  $('#ctxSummary').innerHTML = needCtx() ? 'Chưa có. Sẽ tự động xác định khi bấm "Dịch tự động".'
+    : '<b>' + esc(c.title || 'Không rõ tên') + '</b>' + (c.year ? ' (' + esc(c.year) + ')' : '') + '<br>' + c.characters.length + ' nhân vật · ' + (c.relations || []).length + ' cặp xưng hô · ' + c.glossary.length + ' thuật ngữ · ' + c.sources.length + ' nguồn' + (c.confidence ? ' · tin cậy: ' + esc(c.confidence) : '');
+}
+function inputCell(obj, key, ph, list) {
+  const i = h('input', { type: 'text', placeholder: ph || '' }); i.value = obj[key] || ''; if (list) i.setAttribute('list', list);
+  i.addEventListener('input', () => { obj[key] = i.value; obj.user = true; saveSoon(); });
+  return h('td', {}, i);
+}
+function renderCtxDlg() {
+  const c = S.ctx;
+  for (const el of $$('[data-cx]')) el.value = c[el.dataset.cx] || '';
+  $('#ctxConf').textContent = c.confidence ? 'Độ tin cậy nhận diện: ' + c.confidence : '';
+  $('#ctxWarn').hidden = String(c.confidence).toLowerCase() !== 'low';
+  $('#ctxHint').value = S.hint || '';
+  $('#cxRels').replaceChildren(...(c.relations || []).map(x => h('tr', {}, inputCell(x, 'a', 'Người A', 'charList'), inputCell(x, 'b', 'Người B', 'charList'), inputCell(x, 'ab', 'A tự xưng… & gọi B…'), inputCell(x, 'ba', 'B tự xưng… & gọi A…'), inputCell(x, 'note', 'khi nào đổi'),
+    h('td', {}, h('button', { class: 'ib', text: '✕', onclick: () => { c.relations.splice(c.relations.indexOf(x), 1); renderCtxDlg(); saveSoon(); } })))));
+  refreshCharList();
+  $('#cxChars').replaceChildren(...c.characters.map((x, k) => h('tr', {}, inputCell(x, 'name'), inputCell(x, 'nameT'), inputCell(x, 'gender'), inputCell(x, 'age'), inputCell(x, 'role'), inputCell(x, 'address'),
+    h('td', {}, h('button', { class: 'ib', text: '✕', onclick: () => { c.characters.splice(c.characters.indexOf(x), 1); renderCtxDlg(); saveSoon(); } })))));
+  $('#cxGloss').replaceChildren(...c.glossary.map(x => h('tr', {}, inputCell(x, 'src'), inputCell(x, 'target'), inputCell(x, 'note'),
+    h('td', {}, h('button', { class: 'ib', text: '✕', onclick: () => { c.glossary.splice(c.glossary.indexOf(x), 1); renderCtxDlg(); saveSoon(); } })))));
+  $('#cxSrc').replaceChildren(...(c.sources.length ? c.sources.map(s => h('a', { href: s.uri, target: '_blank', rel: 'noopener noreferrer', text: s.title })) : [h('span', { class: 'hint', text: 'Không có (tìm kiếm bị tắt hoặc không khả dụng).' })]));
+}
+function closeCtxDlg() { $('#ctxDlg').close(); $('#ctxGo').hidden = true; $('#ctxCancel').hidden = true; renderCtxSummary(); qaAll(false); saveSoon(); }
+
+/* ---- Điều phối ---- */
+function checkReady(mode) {
+  if (!pool.keys.length) { toast('Hãy dán ít nhất một API key.'); $('#keys').focus(); return false; }
+  if (!S.rows.length) { toast('Hãy nạp file phụ đề (.srt) trước.'); return false; }
+  if (!cfg.tgt.trim()) { toast('Hãy nhập ngôn ngữ đích.'); return false; }
+  if (!cfg.modelTr.trim()) { toast('Hãy nhập tên model.'); return false; }
+  return true;
+}
+function setRunning(v) {
+  RUN.running = v; for (const x of ['btnRun', 'btnRun2']) $('#' + x).hidden = v; for (const x of ['btnStop', 'btnStop2']) $('#' + x).hidden = !v;
+  for (const b of ['btnOnlyTr', 'btnOnlyEd', 'btnOnlySp', 'btnOnlyAu', 'btnOnlyTg', 'btnCtxRun', 'btnReset', 'btnWipe']) $('#' + b).disabled = v;
+}
+async function startRun(mode) {
+  if (RUN.running || !checkReady(mode)) return;
+  RUN.ctrl = new AbortController(); RUN.signal = RUN.ctrl.signal; setRunning(true);
+  try {
+    if (mode === 'auto' || mode === 'ctx') {
+      const fresh = mode === 'ctx' || needCtx();
+      if (fresh) await stageContext();
+      const low = fresh && cfg.confPause && !needCtx() && (String(S.ctx.confidence || '').toLowerCase() === 'low' || !S.ctx.title);
+      if (low) log('Nhận diện phim kém tin cậy → dừng để bạn kiểm tra ngữ cảnh trước khi dịch.', 'warn');
+      if (mode === 'auto' && (cfg.pauseAfterCtx || low)) await waitCtxApproval();
+    }
+    if (mode === 'sp' || (mode === 'auto' && cfg.doSpeakers)) await stageSpeakers();
+    if (mode === 'auto' || mode === 'tr') await stageTranslate();
+    if ((mode === 'auto' && cfg.doEdit) || mode === 'ed') await stageEdit();
+    if ((mode === 'auto' && cfg.doAudit && S.stage.cn !== 'done') || mode === 'au') await stageAudit();
+    if ((mode === 'auto' && cfg.doTighten) || mode === 'tg') await stageTighten();
+    if (mode !== 'ctx' && mode !== 'sp') stageQA(); else setProg('Hoàn tất', 0, 0);
+    toast('Hoàn tất ✔');
+  } catch (e) {
+    if (isAbort(e)) { log('Đã dừng. Tiến độ đã được lưu: bấm lại để tiếp tục.', 'warn'); setProg('Đã dừng', doneCounter, totalCounter); }
+    else if (e && e.cancelled) { log('Đã hủy sau bước ngữ cảnh.', 'warn'); }
+    else { log(e.message, 'err'); toast(e.message, 7000); setProg('Lỗi: ' + e.message.slice(0, 80), doneCounter, totalCounter); }
+  } finally { setRunning(false); saveNow(); renderSteps(); }
+}
+function stopRun() { if (RUN.ctrl) RUN.ctrl.abort(); if (ctxResolve) { ctxResolve.rej(new DOMException('Aborted', 'AbortError')); ctxResolve = null; if ($('#ctxDlg').open) closeCtxDlg(); } }
+
+/* =====================================================================
+   NẠP FILE, KEY, MODEL
+   ===================================================================== */
+function estCalls(n, batches) {
+  const chars = S.rows.reduce((a, r) => a + r.text.length + 12, 0) * 2;
+  return 2 + (cfg.doSpeakers ? Math.ceil(n / 120) : 0) + batches + (cfg.doEdit ? (cfg.edMode === 'smart' ? Math.ceil(batches * 0.55) : batches) : 0) + (cfg.doAudit ? Math.ceil(chars / 150000) : 0);
+}
+function renderFileInfo() {
+  const n = S.rows.length;
+  if (!n) { $('#fileInfo').textContent = 'Chưa có file.'; return; }
+  const dur = S.rows[n - 1].end, batches = Math.ceil(n / cfg.batch);
+  $('#fileInfo').innerHTML = '<b>' + esc(S.fileName) + '</b><br>' + n + ' dòng · ' + fmtTime(dur).slice(0, 8) + '<br>Ước tính ≈ <b>' + estCalls(n, batches) + '</b> lượt gọi API (chưa tính dịch bù & rút gọn).';
+}
+function loadSRTText(text, name) {
+  const rows = parseSRT(text);
+  if (!rows.length) { toast('Không đọc được phụ đề nào. Kiểm tra định dạng hoặc mã hóa file.', 6000); return; }
+  if ((text.match(/\uFFFD/g) || []).length > 3) toast('File có nhiều ký tự lỗi: hãy thử đổi "Mã hóa file" ở bước 2.', 7000);
+  let keepCtx = false;
+  if (S.rows.length && !needCtx()) keepCtx = confirm('Giữ lại bộ ngữ cảnh hiện tại ("' + (S.ctx.title || 'chưa đặt tên') + '") cho file mới?\n(OK = giữ, ví dụ khi dịch tập tiếp theo cùng bộ phim; Cancel = tạo mới)');
+  S.fileName = name; S.rows = rows.map((r, i) => ({ i, start: r.start, end: r.end, text: r.text, t: '', d1: '', d2: '', ai0: '', note: '', aiCheck: false, locked: false, approved: false, edited: false, failed: false, spk: '', to: '', spkSrc: '', tight: false, audit: false, flags: [] }));
+  if (!keepCtx) S.ctx = emptyCtx();
+  S.stage = Object.assign(newStage(), { ctx: keepCtx ? 'done' : 'idle' });
+  S.hint = guessTitle(name); $('#hint').value = S.hint;
+  undoStack.length = redoStack.length = 0;
+  renderAll(); renderSteps(); renderCtxSummary(); renderFileInfo(); updateStats(); setProg('Sẵn sàng', 0, 0); $('#ticker').textContent = '';
+  log('Đã nạp ' + rows.length + ' dòng từ ' + name, 'ok'); saveNow();
+}
+async function readFile(file) {
+  fileBuf = { buf: await file.arrayBuffer(), name: file.name };
+  decodeAndLoad();
+}
+function decodeAndLoad() {
+  if (!fileBuf) return;
+  const enc = $('#enc').value; let text;
+  try { text = new TextDecoder(enc).decode(fileBuf.buf); } catch (e) { text = new TextDecoder('utf-8').decode(fileBuf.buf); }
+  loadSRTText(text, fileBuf.name);
+}
+function applyKeys() { pool.set(parseKeys(cfg.keys)); renderKeys(); drawProg(); }
+async function testKeys() {
+  if (!pool.keys.length) return toast('Chưa có key.');
+  $('#btnTest').disabled = true; let ok = 0;
+  await Promise.all(pool.keys.map(async k => {
+    try {
+      const r = await fetch(API + '/models?pageSize=1', { headers: { 'x-goog-api-key': k.key } });
+      if (r.ok) { k.state = 'ok'; k.note = ''; ok++; }
+      else { const b = await r.text(); if (r.status === 400 || r.status === 403) { k.state = 'dead'; k.note = errMsg(b).slice(0, 60); } else k.note = 'HTTP ' + r.status; }
+    } catch (e) { k.note = 'lỗi mạng'; }
+  }));
+  renderKeys(); $('#btnTest').disabled = false; toast(ok + '/' + pool.keys.length + ' key hợp lệ.'); log('Kiểm tra key: ' + ok + '/' + pool.keys.length + ' hợp lệ.', ok ? 'ok' : 'err');
+}
+async function loadModels() {
+  const k = pool.alive()[0]; if (!k) return toast('Cần ít nhất một key hợp lệ.');
+  $('#btnModels').disabled = true;
+  try {
+    let names = [], tok = '';
+    for (let p = 0; p < 6; p++) {
+      const r = await fetch(API + '/models?pageSize=200' + (tok ? '&pageToken=' + tok : ''), { headers: { 'x-goog-api-key': k.key } });
+      if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + errMsg(await r.text()));
+      const j = await r.json();
+      for (const m of (j.models || [])) if ((m.supportedGenerationMethods || []).includes('generateContent')) names.push({ id: m.name.replace(/^models\//, ''), label: m.displayName || '' });
+      tok = j.nextPageToken || ''; if (!tok) break;
+    }
+    names = names.filter(n => /^gemini|^gemma/i.test(n.id));
+    $('#modelList').replaceChildren(...names.map(n => h('option', { value: n.id, label: n.label })));
+    const ids = new Set(names.map(n => n.id));
+    const flash = names.map(n => n.id).filter(id => /^gemini-[\d.]+-flash$/.test(id)).sort((a, b) => parseFloat(b.match(/[\d.]+/)[0]) - parseFloat(a.match(/[\d.]+/)[0]))[0];
+    let fixed = 0;
+    for (const f of ['modelTr', 'modelEd', 'modelCtx']) if (!ids.has(cfg[f]) && flash) { cfg[f] = flash; fixed++; }
+    if (fixed) { saveCfg(); bindCfgToUI(); toast('Một số model không còn tồn tại, đã đổi sang ' + flash); }
+    toast('Đã tải ' + names.length + ' model. Gõ vào ô model để chọn.'); log('Model khả dụng: ' + names.map(n => n.id).slice(0, 25).join(', '));
+  } catch (e) { toast('Không tải được danh sách model: ' + e.message, 6000); }
+  $('#btnModels').disabled = false;
+}
+
+/* =====================================================================
+   TÌM & THAY / XUẤT / SỰ KIỆN CHUNG
+   ===================================================================== */
+function frRegex() {
+  const f = $('#frFind').value; if (!f) return null;
+  const e = f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp($('#frWord').checked ? '(?<![\\p{L}\\p{N}])' + e + '(?![\\p{L}\\p{N}])' : e, 'g' + ($('#frCase').checked ? '' : 'i') + 'u');
+}
+function frCount() {
+  const re = frRegex(); if (!re) return 0; let n = 0, rows = 0;
+  for (const r of S.rows) { const m = (r.t || '').match(re); if (m) { n += m.length; rows++; } }
+  $('#frCount').textContent = n + ' kết quả trong ' + rows + ' dòng.'; return n;
+}
+function frDo() {
+  const re = frRegex(); if (!re) return; const rep = $('#frRep').value, ch = [];
+  for (const r of S.rows) {
+    if (r.locked || !(r.t || '').trim()) continue;
+    const nt = r.t.replace(re, () => rep);
+    if (nt !== r.t) { ch.push({ i: r.i, prev: r.t, next: nt }); r.t = nt; r.edited = r.t !== r.ai0; r.approved = false; r.flags = qaFlags(r, cfg, S.ctx.glossary); updateRow(r.i, true); }
+  }
+  pushUndo(ch); updateStats(); saveSoon();
+  if ($('#frGloss').checked && $('#frFind').value && rep) { S.ctx.glossary.unshift({ src: $('#frFind').value, target: rep, note: 'từ Tìm & thay', user: true }); renderCtxSummary(); }
+  $('#frCount').textContent = 'Đã thay ở ' + ch.length + ' dòng (dòng khóa được bỏ qua). Có thể Hoàn tác.';
+}
+function exportSRT(mode) {
+  if (!S.rows.length) return toast('Chưa có dữ liệu.');
+  const missing = S.rows.filter(r => !r.t.trim()).length;
+  if (missing && !confirm(missing + ' dòng chưa có bản dịch sẽ giữ nguyên bản gốc. Vẫn xuất?')) return;
+  const base = (S.fileName || 'subtitle').replace(/\.[^.]+$/, '');
+  download(base + (mode === 'tr' ? '.translated' : '.bilingual') + '.srt', buildSRT(S.rows, mode), 'application/x-subrip');
+}
+function bindCfgToUI() {
+  for (const el of $$('[data-cfg]')) { const v = cfg[el.dataset.cfg]; if (el.type === 'checkbox') el.checked = !!v; else el.value = v ?? ''; }
+  applyKeys(); renderFileInfo();
+}
+for (const el of $$('[data-cfg]')) el.addEventListener('input', () => {
+  const k = el.dataset.cfg;
+  cfg[k] = el.type === 'checkbox' ? el.checked : el.type === 'number' ? (el.value === '' ? DEF[k] : Number(el.value)) : el.value;
+  saveCfg(); if (k === 'keys') applyKeys(); if (['batch', 'doEdit', 'edMode', 'doSpeakers', 'doAudit'].includes(k)) renderFileInfo();
+  if (k === 'maxCps' || k === 'maxChars') { clearTimeout(window._qaT); window._qaT = setTimeout(() => qaAll(false), 400); }
+});
+$('#btnRun').onclick = $('#btnRun2').onclick = () => { closeDrawers(); startRun('auto'); };
+$('#btnStop').onclick = $('#btnStop2').onclick = stopRun;
+$('#btnOnlyTr').onclick = () => startRun('tr');
+$('#btnOnlyEd').onclick = () => startRun('ed');
+$('#btnOnlySp').onclick = () => startRun('sp');
+$('#btnOnlyAu').onclick = () => startRun('au');
+$('#btnOnlyTg').onclick = () => startRun('tg');
+$('#btnCtxRun').onclick = () => { if (S.ctx.characters.concat(S.ctx.glossary).some(x => x.user) && !confirm('Các mục bạn đã sửa/thêm sẽ được giữ lại, phần còn lại sẽ được tạo mới. Tiếp tục?')) return; startRun('ctx'); };
+$('#btnQA').onclick = () => { qaAll(false); toast('Đã chạy lại kiểm tra.'); };
+$('#btnReset').onclick = () => {
+  if (!S.rows.length || !confirm('Xóa toàn bộ bản dịch của các dòng chưa khóa để dịch lại từ đầu?')) return;
+  for (const r of S.rows) if (!r.locked) Object.assign(r, { t: '', d1: '', d2: '', ai0: '', note: '', aiCheck: false, approved: false, edited: false, failed: false, tight: false, audit: false, flags: [] });
+  S.stage.tr = S.stage.ed = S.stage.cn = S.stage.tg = S.stage.qa = 'idle'; renderSteps(); S.rows.forEach((_, i) => updateRow(i, false)); updateStats(); saveNow();
+};
+$('#btnWipe').onclick = async () => { if (!confirm('Xóa dự án hiện tại (file, bản dịch, ngữ cảnh) khỏi trình duyệt?')) return; await idb.del('project'); S.rows = []; S.ctx = emptyCtx(); S.fileName = ''; S.hint = ''; S.stage = newStage(); renderAll(); renderSteps(); renderCtxSummary(); renderFileInfo(); updateStats(); setProg('Sẵn sàng', 0, 0); };
+$('#btnTest').onclick = testKeys;
+$('#btnModels').onclick = loadModels;
+$('#btnClearKeys').onclick = () => { if (!confirm('Xóa toàn bộ API key đã lưu trong trình duyệt?')) return; cfg.keys = ''; $('#keys').value = ''; saveCfg(); applyKeys(); };
+$('#enc').onchange = decodeAndLoad;
+$('#hint').addEventListener('input', e => { S.hint = e.target.value; saveSoon(); });
+const drop = $('#drop');
+drop.onclick = () => $('#fileIn').click();
+$('#fileIn').onchange = e => { if (e.target.files[0]) readFile(e.target.files[0]); e.target.value = ''; };
+for (const ev of ['dragenter', 'dragover']) drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); });
+for (const ev of ['dragleave', 'drop']) drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); });
+drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) readFile(f); });
+window.addEventListener('dragover', e => e.preventDefault()); window.addEventListener('drop', e => { e.preventDefault(); if (!drop.contains(e.target) && e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]); });
+
+$('#fltSel').onchange = applyFilter;
+$('#fltQ').addEventListener('input', () => { clearTimeout(window._fT); window._fT = setTimeout(applyFilter, 200); });
+$('#btnUndo').onclick = undo; $('#btnRedo').onclick = redo;
+document.addEventListener('keydown', e => {
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || '');
+  if ((e.ctrlKey || e.metaKey) && !typing) {
+    if (e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+    else if (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
+  }
+});
+$('#btnFR').onclick = () => { $('#frCount').textContent = ''; $('#frDlg').showModal(); $('#frFind').focus(); };
+$('#frClose').onclick = () => $('#frDlg').close(); $('#frCnt').onclick = frCount; $('#frDo').onclick = frDo;
+$('#btnCtxOpen').onclick = () => { renderCtxDlg(); $('#ctxDlg').showModal(); };
+$('#ctxClose').onclick = closeCtxDlg;
+$('#ctxDlg').addEventListener('cancel', e => { if (ctxResolve) e.preventDefault(); else { $('#ctxGo').hidden = true; setTimeout(() => { renderCtxSummary(); qaAll(false); }, 0); } });
+$('#ctxGo').onclick = () => { closeCtxDlg(); if (ctxResolve) { ctxResolve.res(); ctxResolve = null; } };
+$('#ctxCancel').onclick = () => { closeCtxDlg(); if (ctxResolve) { const e = new Error('cancel'); e.cancelled = true; ctxResolve.rej(e); ctxResolve = null; } };
+$('#ctxDlg').addEventListener('input', e => { const k = e.target.dataset && e.target.dataset.cx; if (k) { S.ctx[k] = e.target.value; saveSoon(); } });
+$('#addChar').onclick = () => { S.ctx.characters.push({ name: '', nameT: '', gender: '', age: '', role: '', address: '', user: true }); renderCtxDlg(); };
+$('#addRel').onclick = () => { S.ctx.relations.push({ a: '', b: '', ab: '', ba: '', note: '', user: true }); renderCtxDlg(); };
+function setCtxBusy(v) { for (const id of ['ctxRetry', 'ctxGo', 'ctxCancel', 'ctxClose']) $('#' + id).disabled = v; $('#ctxRetry').textContent = v ? '⏳ Đang tìm lại…' : '🔎 Tìm lại bằng gợi ý'; }
+$('#ctxRetry').onclick = async () => {
+  const hint = $('#ctxHint').value.trim(); S.hint = hint; $('#hint').value = hint;
+  if (RUN.running) {
+    setCtxBusy(true);
+    try { await stageContext(); toast('Đã tìm lại ngữ cảnh.'); } catch (e) { if (!isAbort(e)) { toast(e.message, 6000); log(e.message, 'err'); } }
+    setCtxBusy(false); renderCtxDlg();
+  } else { if (!checkReady('ctx')) return; setCtxBusy(true); await startRun('ctx'); setCtxBusy(false); renderCtxDlg(); }
+};
+$('#addGloss').onclick = () => { S.ctx.glossary.unshift({ src: '', target: '', note: '', user: true }); renderCtxDlg(); };
+$('#btnCtxExp').onclick = () => download((S.ctx.title || 'context').replace(/[^\w\-]+/g, '_') + '.sublens-context.json', JSON.stringify(S.ctx, null, 2), 'application/json');
+$('#btnCtxImp').onclick = () => $('#ctxIn').click();
+$('#ctxIn').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; try { S.ctx = Object.assign(emptyCtx(), JSON.parse(await f.text())); S.stage.ctx = 'done'; renderCtxSummary(); renderSteps(); qaAll(false); saveSoon(); toast('Đã nhập ngữ cảnh.'); } catch (_) { toast('File ngữ cảnh không hợp lệ.'); } };
+$('#btnSaveProj').onclick = () => { $('#fileMenu').open = false; if (!S.rows.length) return toast('Chưa có dữ liệu.'); download((S.fileName || 'project').replace(/\.[^.]+$/, '') + '.sublens.json', JSON.stringify(snapshot()), 'application/json'); };
+$('#btnOpenProj').onclick = () => { $('#fileMenu').open = false; $('#projIn').click(); };
+$('#projIn').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; try { loadSnapshot(JSON.parse(await f.text())); saveNow(); toast('Đã mở dự án.'); } catch (_) { toast('File dự án không hợp lệ.'); } };
+for (const b of $$('[data-exp]')) b.onclick = () => { $('#fileMenu').open = false; exportSRT(b.dataset.exp); };
+document.addEventListener('click', e => { const m = $('#fileMenu'); if (m.open && !m.contains(e.target)) m.open = false; });
+window.addEventListener('beforeunload', e => { if (RUN.running) { e.preventDefault(); e.returnValue = ''; } saveNow(); });
+
+/* ---- Prompt nâng cao: giao diện xem / chỉnh / khôi phục ---- */
+const PM_ORDER = ['research', 'ctxsynth', 'speakers', 'translate', 'edit', 'audit', 'tighten', 'tgtguide'];
+let pmKey = 'translate';
+function updatePmSummary() {
+  const m = PM_ORDER.filter(promptModified);
+  $('#pmSummary').innerHTML = m.length ? '<b>' + m.length + ' prompt đã chỉnh:</b> ' + m.map(k => esc(PROMPTS[k].title)).join(', ') : 'Đang dùng prompt mặc định.';
+}
+function renderPmList() {
+  $('#pmList').replaceChildren(...PM_ORDER.map(k => h('button', { class: 'pm-item' + (k === pmKey ? ' on' : ''), dataset: { k } },
+    h('b', { text: PROMPTS[k].title }), h('small', { text: PROMPTS[k].stage }), promptModified(k) ? h('span', { class: 'chip warn', text: 'đã chỉnh' }) : null)));
+  $('#pmInfo').textContent = PM_ORDER.filter(promptModified).length ? PM_ORDER.filter(promptModified).length + ' mục đã chỉnh' : 'tất cả đang là mặc định';
+}
+function checkPm() {
+  const d = PROMPTS[pmKey], v = $('#pmText').value, msgs = [];
+  for (const r of d.required) if (!v.includes('{{' + r + '}}')) msgs.push('Thiếu ' + '{{' + r + '}}: ' + VAR_DOC[r] + ' sẽ KHÔNG được gửi cho model ở bước này.');
+  const ok = new Set([...d.vars, 'TGT_GUIDE', 'CONTEXT']);
+  const bad = [...new Set([...v.matchAll(/\{\{(\w+)\}\}/g)].map(m => m[1]).filter(x => !d.vars.includes(x)))];
+  if (bad.length) msgs.push('Biến không dùng được trong prompt này (sẽ giữ nguyên chữ): ' + bad.map(x => '{{' + x + '}}').join(', '));
+  if (!v.trim()) msgs.push('Prompt trống: sẽ dùng lại bản mặc định.');
+  $('#pmWarn').hidden = !msgs.length; $('#pmWarn').textContent = msgs.join(' ');
+}
+function refreshPmPreview() {
+  const box = $('#pmPrevBox'), cbox = $('#pmContractBox');
+  if (cbox.open) { const c = PROMPTS[pmKey].contract ? fillPrompt(PROMPTS[pmKey].contract(), promptVars({})) : ''; $('#pmContract').textContent = c || '(bước này trả về văn bản tự do, không có định dạng cố định)'; }
+  if (box.open) $('#pmPreview').textContent = renderSystem(pmKey, { FILTER: '' });
+}
+function selectPm(k) {
+  pmKey = k; const d = PROMPTS[k];
+  $('#pmTitle').textContent = d.title; $('#pmDesc').textContent = d.desc;
+  $('#pmText').value = promptBody(k);
+  $('#pmVars').replaceChildren(h('span', { class: 'hint', text: 'Biến (bấm để chèn tại con trỏ):' }),
+    ...d.vars.map(x => h('button', { class: 'chip info pm-var', title: VAR_DOC[x] || '', text: '{{' + x + '}}', onclick: () => insertPmVar('{{' + x + '}}') })),
+    ...(d.vars.includes('CONTEXT') || d.vars.includes('TGT_GUIDE') ? [] : []));
+  renderPmList(); checkPm(); refreshPmPreview();
+}
+function insertPmVar(txt) {
+  const ta = $('#pmText'), a = ta.selectionStart, b = ta.selectionEnd;
+  ta.setRangeText(txt, a, b, 'end'); ta.focus(); ta.dispatchEvent(new Event('input', { bubbles: true }));
+}
+$('#pmText').addEventListener('input', () => {
+  const v = $('#pmText').value;
+  if (!v.trim() || v === defaultBody(pmKey)) delete cfg.prompts[pmKey]; else cfg.prompts[pmKey] = v;
+  saveCfg(); renderPmList(); checkPm(); refreshPmPreview(); updatePmSummary();
+});
+$('#pmList').addEventListener('click', e => { const b = e.target.closest('[data-k]'); if (b) selectPm(b.dataset.k); });
+$('#pmContractBox').addEventListener('toggle', refreshPmPreview);
+$('#pmPrevBox').addEventListener('toggle', refreshPmPreview);
+$('#pmReset').onclick = () => { delete cfg.prompts[pmKey]; saveCfg(); selectPm(pmKey); updatePmSummary(); toast('Đã khôi phục mặc định cho "' + PROMPTS[pmKey].title + '".'); };
+$('#pmResetAll').onclick = () => { if (!PM_ORDER.some(promptModified)) return toast('Mọi prompt đang là mặc định.'); if (!confirm('Khôi phục TẤT CẢ prompt về mặc định? Các chỉnh sửa của bạn sẽ mất.')) return; cfg.prompts = {}; saveCfg(); selectPm(pmKey); updatePmSummary(); toast('Đã khôi phục tất cả prompt.'); };
+$('#btnPrompts').onclick = () => { selectPm(pmKey); $('#pmDlg').showModal(); };
+$('#pmClose').onclick = () => $('#pmDlg').close();
+$('#pmDlg').addEventListener('close', updatePmSummary);
+
+/* ---- Bố cục: cột trái / phải, kéo thả khung ---- */
+const UI_KEY = 'sublens.ui.v1';
+const ui = { order: [], open: {}, l: null, r: null };
+try { Object.assign(ui, JSON.parse(localStorage.getItem(UI_KEY) || '{}')); } catch (_) {}
+if (!Array.isArray(ui.order)) ui.order = [];
+if (!ui.open || typeof ui.open !== 'object') ui.open = {};
+const saveUI = () => { try { localStorage.setItem(UI_KEY, JSON.stringify({ order: ui.order, open: ui.open, l: ui.l, r: ui.r })); } catch (_) {} };
+const mqDrawer = matchMedia('(max-width:999px)');
+const drawer = { l: false, r: false };
+const appEl = $('#app');
+if (ui.l == null) ui.l = true;
+if (ui.r == null) ui.r = innerWidth >= 1280;
+function applyPanels() {
+  const d = mqDrawer.matches;
+  appEl.classList.toggle('l-open', d ? drawer.l : ui.l);
+  appEl.classList.toggle('r-open', d ? drawer.r : ui.r);
+}
+function togglePanel(side) {
+  if (mqDrawer.matches) { const v = !drawer[side]; drawer.l = drawer.r = false; drawer[side] = v; }
+  else { ui[side] = !ui[side]; saveUI(); }
+  applyPanels();
+}
+function closeDrawers() { if (mqDrawer.matches && (drawer.l || drawer.r)) { drawer.l = drawer.r = false; applyPanels(); } }
+mqDrawer.addEventListener('change', () => { drawer.l = drawer.r = false; applyPanels(); });
+$('#btnLOpen').onclick = $('#btnLClose').onclick = () => togglePanel('l');
+$('#btnROpen').onclick = $('#btnRClose').onclick = () => togglePanel('r');
+$('#scrim').onclick = closeDrawers;
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !document.querySelector('dialog[open]')) closeDrawers(); });
+applyPanels();
+
+(function cardsInit() {
+  const box = $('#cards');
+  const all = () => [...box.querySelectorAll(':scope>.card')];
+  const byId = id => all().find(c => c.dataset.card === id);
+  for (const id of ui.order) { const c = byId(id); if (c) box.append(c); }
+  for (const c of all()) {
+    const id = c.dataset.card;
+    if (id in ui.open) c.open = !!ui.open[id];
+    c.addEventListener('toggle', () => { ui.open[id] = c.open; saveUI(); });
+  }
+  const saveOrder = () => { ui.order = all().map(c => c.dataset.card); saveUI(); };
+  box.addEventListener('click', e => { if (e.target.closest('.grip')) e.preventDefault(); });
+  let drag = null;
+  box.addEventListener('pointerdown', e => {
+    const g = e.target.closest('.grip'); if (!g || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    e.preventDefault();
+    const card = g.closest('.card'), rect = card.getBoundingClientRect();
+    drag = { card, startY: e.clientY, offY: e.clientY - rect.top, rect, ph: null, moved: false, y: e.clientY };
+    addEventListener('pointermove', mv); addEventListener('pointerup', up); addEventListener('pointercancel', up);
+  });
+  function begin() {
+    const d = drag; d.moved = true;
+    d.ph = document.createElement('div'); d.ph.className = 'card-ph'; d.ph.style.height = d.rect.height + 'px';
+    d.card.after(d.ph); d.card.classList.add('dragging');
+    Object.assign(d.card.style, { position: 'fixed', left: d.rect.left + 'px', top: d.rect.top + 'px', width: d.rect.width + 'px', zIndex: 90, pointerEvents: 'none', margin: 0 });
+    document.body.classList.add('dragging-card');
+    d.timer = setInterval(() => { const r = box.getBoundingClientRect(); if (d.y < r.top + 44) box.scrollTop -= 10; else if (d.y > r.bottom - 44) box.scrollTop += 10; place(); }, 16);
+  }
+  function place() {
+    const d = drag; if (!d || !d.moved) return;
+    let before = null;
+    for (const c of all()) { if (c === d.card) continue; const b = c.getBoundingClientRect(); if (d.y < b.top + b.height / 2) { before = c; break; } }
+    if (before) { if (d.ph.nextElementSibling !== before) box.insertBefore(d.ph, before); } else if (box.lastElementChild !== d.ph) box.append(d.ph);
+  }
+  function mv(e) {
+    const d = drag; if (!d) return; d.y = e.clientY;
+    if (!d.moved) { if (Math.abs(e.clientY - d.startY) < 4) return; begin(); }
+    const bt = box.getBoundingClientRect();
+    d.card.style.top = Math.min(Math.max(e.clientY - d.offY, bt.top - 8), bt.bottom - 40) + 'px';
+    place();
+  }
+  function up() {
+    removeEventListener('pointermove', mv); removeEventListener('pointerup', up); removeEventListener('pointercancel', up);
+    const d = drag; drag = null; if (!d || !d.moved) return;
+    clearInterval(d.timer);
+    d.card.removeAttribute('style'); d.card.classList.remove('dragging');
+    d.ph.replaceWith(d.card); document.body.classList.remove('dragging-card');
+    saveOrder();
+  }
+  box.addEventListener('keydown', e => {
+    const g = e.target.closest('.grip'); if (!g || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+    e.preventDefault();
+    const c = g.closest('.card'), sib = e.key === 'ArrowUp' ? c.previousElementSibling : c.nextElementSibling;
+    if (!sib) return;
+    if (e.key === 'ArrowUp') box.insertBefore(c, sib); else sib.after(c);
+    g.focus(); c.scrollIntoView({ block: 'nearest' }); saveOrder();
+  });
+})();
+
+/* ---- Khởi động ---- */
+bindCfgToUI(); renderSteps(); renderCtxSummary(); updatePmSummary();
+(async () => {
+  const p = await idb.get('project');
+  if (p && p.rows && p.rows.length) { loadSnapshot(p); log('Đã khôi phục dự án trước: ' + p.fileName + ' (' + p.rows.length + ' dòng).', 'ok'); }
+})();
+</script>
+</body>
+</html>
